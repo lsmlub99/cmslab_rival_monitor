@@ -1,0 +1,42 @@
+# 환경변수 / 시크릿 (절대 커밋 금지)
+.env
+*.env
+**/.env
+
+# 파이썬 캐시
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# 가상환경
+venv/
+.venv/
+env/
+
+# 로그
+*.log
+
+# 생성된 보고서 (소스가 아닌 산출물)
+CellFusionC_intel/rival_report*.html
+
+# 업무 문서 / 개인 메모
+*.docx
+에릭 요청.txt
+
+# Chart.js 캐시 (빌드 산출물)
+CellFusionC_intel/dashboard/chartjs_cache.min.js
+
+# IDE
+.vscode/
+.idea/
+*.suo
+*.user
+
+# OS
+.DS_Store
+Thumbs.db

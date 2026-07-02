@@ -201,6 +201,35 @@ def report(days: int, output: str, no_open: bool) -> None:
         click.echo(f"브라우저 오픈: {url}")
 
 
+@cli.command("collect-all")
+@click.option("--tier", "-t", default=1, type=click.Choice(["1", "2"]),
+              show_default=True, help="수집 Tier (1=핵심, 2=전체)")
+def collect_all(tier: str) -> None:
+    """전체 브랜드 × 국가 일괄 수집."""
+    from config.brands import TIER1_BRANDS, ALL_BRANDS, TIER1_COUNTRIES, COUNTRIES
+    from scheduler.pipeline import run_pipeline
+
+    brands = TIER1_BRANDS if tier == "1" else ALL_BRANDS
+    countries = TIER1_COUNTRIES if tier == "1" else list(COUNTRIES.keys())
+
+    total_saved = 0
+    click.echo(f"수집 시작: {len(brands)}개 브랜드 × {len(countries)}개 국가")
+
+    for brand in brands:
+        for country in countries:
+            try:
+                stats = run_pipeline(brand, country)
+                total_saved += stats.saved
+                click.echo(
+                    f"  [{brand}/{country}] 저장 {stats.saved}건 "
+                    f"(수집 {stats.found} / 분류 {stats.classified})"
+                )
+            except Exception as e:
+                click.echo(f"  [{brand}/{country}] 오류: {e}", err=True)
+
+    click.echo(f"\n완료: 총 {total_saved}건 저장")
+
+
 @cli.command()
 def run() -> None:
     """스케줄러 시작 (백그라운드 운영용, Ctrl+C 로 종료)."""

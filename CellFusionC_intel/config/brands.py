@@ -9,35 +9,35 @@ TIER1_BRANDS = [
     "Cos de Baha",
     "By Wishtrend",
     "Dalba",
+    "Beauty of Joseon",  # 조선미녀 — 글로벌 바이럴 급성장
+    "Skin1004",          # 스킨1004 — 세포라 입점, 마다가스카르 센텔라
+    "Dr.Jart+",          # 닥터자르트 — 에스티로더 인수, 미주 강세
+    "Torriden",          # 토리든 — 일본·미국 인플루언서 성장
 ]
 
 # Tier 2: 주 1회 수집
 TIER2_BRANDS = [
-    "Dr.Jart+",          # 닥터자르트
-    "Skin1004",          # 스킨1004
     "Roundlab",          # 라운드랩
     "Centellian24",      # 센텔리안24
     "VT Cosmetics",      # 브이티
     "Numbuzin",          # 넘버즈인
     "b.plain",           # 비플레인
     "Goodal",            # 구달
-    "Torriden",          # 토리든
     "Abib",              # 아비브
     "Rejuran",           # 리쥬란
     "Mixsoon",           # 믹순
     "Aestura",           # 에스트라
     "Zeroid",            # 제로이드
-    "Beauty of Joseon",  # 조선미녀
     "Celimax",           # 셀리맥스
 ]
 
 ALL_BRANDS = TIER1_BRANDS + TIER2_BRANDS
 
 # Tier 1 국가: 매일 수집 (K-뷰티 핵심 시장)
-TIER1_COUNTRIES = ["US", "PL", "JP", "TH", "SG", "CN"]
+TIER1_COUNTRIES = ["US", "PL", "JP", "TH", "SG", "CN", "KR", "GB", "CA", "AU", "ID", "MY", "VN"]
 
 # Tier 2 국가: 주 1회 수집 (확장 시장)
-TIER2_COUNTRIES = ["GB", "CA", "AU", "DE", "FR", "ID", "MY", "VN"]
+TIER2_COUNTRIES = ["DE", "FR"]
 
 # 국가별 언어 코드 + Google News 파라미터
 COUNTRIES = {
@@ -55,6 +55,7 @@ COUNTRIES = {
     "ID": {"hl": "id", "gl": "ID", "ceid": "ID:id", "name": "인도네시아"},
     "MY": {"hl": "ms", "gl": "MY", "ceid": "MY:ms", "name": "말레이시아"},
     "VN": {"hl": "vi", "gl": "VN", "ceid": "VN:vi", "name": "베트남"},
+    "KR": {"hl": "ko", "gl": "KR", "ceid": "KR:ko", "name": "한국"},
 }
 
 # 활동 유형 분류 기준

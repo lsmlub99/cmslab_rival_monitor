@@ -1,44 +1,78 @@
 """
-브랜드 전략 인사이트 요약 — Claude API (Haiku 사용, 리포트당 ~$0.02)
+브랜드 전략 인사이트 요약 — OpenAI API (o4-mini)
 """
 
-import anthropic
+import logging
+import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 
 def generate_brand_strategy_summary(brand: str, articles: list) -> str:
-    """HIGH+MEDIUM 기사 목록 → 1-2줄 전략 요약 (한국어).
+    """HIGH+MEDIUM 기사 → 구체적 전략 인사이트 2문장 (한국어).
 
-    Args:
-        brand: 브랜드명
-        articles: [{imp, act, title_ko, date}, ...] 최대 5건
-
-    Returns:
-        1-2줄 전략 요약 문자열
+    articles: [{imp, act, title_ko, details, date}, ...]
     """
     if not articles:
         return f"{brand}의 최근 주목할 만한 활동이 없습니다."
 
     article_lines = "\n".join(
-        f"- [{a['imp'].upper()}] {a['title_ko']} ({a['act']}, {a['date']})"
+        f"- [{a['imp'].upper()}] {a.get('title_ko','')} / {a.get('details','')[:120]} ({a.get('act','')}, {a.get('date','')})"
         for a in articles
-        if a.get("title_ko")
+        if a.get("title_ko") or a.get("details")
     )
     if not article_lines:
-        return f"{brand}의 기사 요약 정보가 없습니다."
+        return _fallback_from_data(brand, articles)
 
-    prompt = f"""다음은 K-뷰티 브랜드 {brand}의 최근 주요 경쟁 인텔리전스 기사입니다:
+    prompt = f"""다음은 K-뷰티 브랜드 {brand}의 최근 경쟁 인텔리전스 기사입니다:
 
 {article_lines}
 
-이 데이터를 바탕으로 {brand}의 현재 전략 방향을 2문장 이내로 한국어로 요약해 주세요.
-- 첫 문장: 주요 전략 접근법 (어떤 채널/방식으로 무엇을 하고 있는지)
-- 두 번째 문장: 주요 타겟 시장·고객층
-반드시 기사에 나온 구체적 사실(브랜드명·캠페인·채널·수치)을 기반으로 작성하세요. 추측하지 마세요."""
+위 기사를 바탕으로 {brand}의 현재 전략을 **2문장**으로 요약하세요.
+- 반드시 기사에 나온 **구체적 사실**(파트너십, 진출국가, 인수합병, 채널명, 수치 등)을 포함할 것
+- "글로벌 시장을 공략 중입니다" 같은 뻔한 표현 금지
+- 첫 문장: 가장 중요한 최근 움직임 (무엇을, 어디서, 어떻게)
+- 둘째 문장: 그것이 시사하는 전략 방향 또는 다음 시장"""
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=200,
-        messages=[{"role": "user", "content": prompt}],
+    try:
+        from openai import OpenAI
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        response = client.chat.completions.create(
+            model="o4-mini",
+            max_completion_tokens=2000,  # reasoning + output 합산 — 최소 1500 필요
+            messages=[{"role": "user", "content": prompt}],
+        )
+        content = (response.choices[0].message.content or "").strip()
+        if not content:
+            raise ValueError("empty response from o4-mini")
+        return content
+    except Exception as e:
+        logger.warning("브랜드 요약 생성 실패 [%s]: %s", brand, e)
+        return _fallback_from_data(brand, articles)
+
+
+def _fallback_from_data(brand: str, articles: list) -> str:
+    """AI 실패 시 실제 기사 내용 기반 fallback."""
+    # HIGH 우선, 없으면 MEDIUM
+    key = next((a for a in articles if a.get("imp") == "high" and (a.get("details") or a.get("title_ko"))), None)
+    if not key:
+        key = next((a for a in articles if a.get("details") or a.get("title_ko")), None)
+    if not key:
+        return f"{brand}의 최근 주목할 만한 활동이 없습니다."
+
+    first = (key.get("details") or key.get("title_ko") or "").strip()
+    # 두 번째 다른 기사
+    second = next(
+        (a for a in articles if a is not key and (a.get("details") or a.get("title_ko"))),
+        None,
     )
-    return response.content[0].text.strip()
+    second_text = ""
+    if second:
+        s = (second.get("details") or second.get("title_ko") or "").strip()
+        if s:
+            second_text = f" 아울러 {s}"
+
+    return f"{first}{second_text}"

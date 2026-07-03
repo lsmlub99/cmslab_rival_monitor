@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Float, Index, String, Text, TIMESTAMP, create_engine
+    BigInteger, Boolean, Column, Float, Index, Integer, String, Text, TIMESTAMP, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 
@@ -86,12 +86,39 @@ class DedupCandidate(Base):
     created_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
 
-def get_engine():
-    return create_engine(
-        DATABASE_URL,
-        pool_pre_ping=True,
-        connect_args={"sslmode": "require"},
+class BrandInsight(Base):
+    """브랜드별 날짜 범위 AI 인사이트 캐시."""
+    __tablename__ = "brand_insights"
+    __table_args__ = (
+        Index("uq_brand_insight_range", "brand", "from_date", "to_date", unique=True),
+        {"schema": DB_SCHEMA},
     )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    brand = Column(String(100), nullable=False)
+    from_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    to_date = Column(TIMESTAMP(timezone=True), nullable=False)
+    summary = Column(Text, nullable=False)
+    top_act = Column(String(50))
+    top_pct = Column(Integer)
+    high_pct = Column(Float)
+    generated_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+
+
+_engine = None
+
+
+def get_engine():
+    global _engine
+    if _engine is None:
+        _engine = create_engine(
+            DATABASE_URL,
+            pool_size=3,
+            max_overflow=2,
+            pool_pre_ping=True,
+            connect_args={"sslmode": "require"},
+        )
+    return _engine
 
 
 def create_tables():
@@ -123,6 +150,27 @@ def migrate_tables():
                 print(f"마이그레이션 완료: {sql.split('ADD')[1].strip()}")
             except Exception as e:
                 print(f"마이그레이션 스킵 ({e})")
+        # brand_insights 테이블 — from_date/to_date 기반으로 재생성
+        try:
+            conn.execute(text(f"DROP TABLE IF EXISTS {DB_SCHEMA}.brand_insights"))
+            conn.execute(text(f"""
+                CREATE TABLE {DB_SCHEMA}.brand_insights (
+                    id BIGSERIAL PRIMARY KEY,
+                    brand VARCHAR(100) NOT NULL,
+                    from_date TIMESTAMP WITH TIME ZONE NOT NULL,
+                    to_date TIMESTAMP WITH TIME ZONE NOT NULL,
+                    summary TEXT NOT NULL,
+                    top_act VARCHAR(50),
+                    top_pct INTEGER,
+                    high_pct FLOAT,
+                    generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+                    UNIQUE(brand, from_date, to_date)
+                )
+            """))
+            conn.commit()
+            print("brand_insights 테이블 재생성 완료")
+        except Exception as e:
+            print(f"brand_insights 테이블 생성 스킵 ({e})")
     return engine
 
 

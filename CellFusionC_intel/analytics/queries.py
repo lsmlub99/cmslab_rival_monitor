@@ -70,12 +70,14 @@ def get_high_articles(
             SELECT id, title, brand, country, activity_type,
                    details, product_name, source_url, source_name,
                    published_date, note, classification_confidence,
-                   title_ko, article_body, article_body_ko
+                   title_ko, article_body, article_body_ko, importance
             FROM {DB_SCHEMA}.news_articles
-            WHERE importance = 'high'
+            WHERE importance IN ('high', 'medium')
               AND published_date >= :cutoff
               {where_extras}
-            ORDER BY published_date DESC
+            ORDER BY
+                CASE importance WHEN 'high' THEN 0 ELSE 1 END,
+                published_date DESC
         """),
         params,
     ).fetchall()
@@ -97,6 +99,7 @@ def get_high_articles(
             "title_ko":         r[12],
             "article_body":     r[13],
             "article_body_ko":  r[14],
+            "importance":       r[15] or "high",
         }
         for r in rows
     ]
@@ -328,8 +331,10 @@ def get_brand_insights_raw(session: Session, days: int = 30) -> dict:
     # 4) HIGH+MEDIUM 기사 상위 5건 per brand (Claude 요약용)
     art_rows = session.execute(
         text(f"""
-            SELECT brand, importance, activity_type, title_ko, source_url,
-                   published_date::date::text AS pub_date
+            SELECT brand, importance, activity_type,
+                   COALESCE(NULLIF(title_ko,''), LEFT(NULLIF(details,''),70), title) AS title_ko,
+                   source_url, published_date::date::text AS pub_date,
+                   details
             FROM {DB_SCHEMA}.news_articles
             WHERE importance IN ('high', 'medium')
               AND published_date >= :cutoff
@@ -365,6 +370,7 @@ def get_brand_insights_raw(session: Session, days: int = 30) -> dict:
                 "act":      r[2] or "기타",
                 "title_ko": r[3] or "",
                 "url":      r[4] or "",
+                "details":  r[6] or "",
                 "date":     r[5] or "",
             })
 
@@ -382,3 +388,155 @@ def get_brand_insights_raw(session: Session, days: int = 30) -> dict:
             "articles":      brand_arts.get(brand, []),
         }
     return result
+
+
+def get_insights_cache(session: Session, from_date: str, to_date: str) -> dict:
+    """날짜 범위 기준 캐시 조회. {brand: {summary, top_act, top_pct, high_pct}}"""
+    rows = session.execute(
+        text(f"""
+            SELECT brand, summary, top_act, top_pct, high_pct
+            FROM {DB_SCHEMA}.brand_insights
+            WHERE from_date::date = :from_date
+              AND to_date::date = :to_date
+        """),
+        {"from_date": from_date, "to_date": to_date},
+    ).fetchall()
+    return {
+        r[0]: {
+            "summary":  r[1] or "",
+            "top_act":  r[2] or "기타",
+            "top_pct":  r[3] or 0,
+            "high_pct": float(r[4]) if r[4] is not None else 0.0,
+        }
+        for r in rows
+    }
+
+
+def upsert_insight_cache(
+    session: Session, brand: str, from_date: str, to_date: str, data: dict
+) -> None:
+    """브랜드 인사이트 DB에 UPSERT (brand, from_date, to_date 기준)."""
+    session.execute(
+        text(f"""
+            INSERT INTO {DB_SCHEMA}.brand_insights
+                (brand, from_date, to_date, summary, top_act, top_pct, high_pct, generated_at)
+            VALUES (:brand, :from_date, :to_date, :summary, :top_act, :top_pct, :high_pct, NOW())
+            ON CONFLICT (brand, from_date, to_date)
+            DO UPDATE SET
+                summary      = EXCLUDED.summary,
+                top_act      = EXCLUDED.top_act,
+                top_pct      = EXCLUDED.top_pct,
+                high_pct     = EXCLUDED.high_pct,
+                generated_at = EXCLUDED.generated_at
+        """),
+        {
+            "brand":     brand,
+            "from_date": from_date,
+            "to_date":   to_date,
+            "summary":   data.get("summary", ""),
+            "top_act":   data.get("top_act", "기타"),
+            "top_pct":   int(data.get("top_pct", 0)),
+            "high_pct":  float(data.get("high_pct", 0.0)),
+        },
+    )
+    session.commit()
+
+
+def get_brand_insights_raw_by_range(session: Session, from_date: str, to_date: str) -> dict:
+    """명시적 날짜 범위 기반 브랜드 인사이트 원자료 (API 엔드포인트용)."""
+    params = {"from_date": from_date, "to_date": to_date}
+    date_filter = "published_date::date >= :from_date AND published_date::date <= :to_date"
+
+    act_rows = session.execute(
+        text(f"""
+            SELECT brand, activity_type, COUNT(*) AS cnt
+            FROM {DB_SCHEMA}.news_articles
+            WHERE {date_filter}
+            GROUP BY brand, activity_type
+            ORDER BY brand, cnt DESC
+        """), params,
+    ).fetchall()
+
+    high_rows = session.execute(
+        text(f"""
+            SELECT brand,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE importance = 'high') AS high
+            FROM {DB_SCHEMA}.news_articles
+            WHERE {date_filter}
+            GROUP BY brand
+        """), params,
+    ).fetchall()
+
+    country_rows = session.execute(
+        text(f"""
+            SELECT brand, country, COUNT(*) AS cnt
+            FROM {DB_SCHEMA}.news_articles
+            WHERE {date_filter}
+            GROUP BY brand, country
+            ORDER BY brand, cnt DESC
+        """), params,
+    ).fetchall()
+
+    art_rows = session.execute(
+        text(f"""
+            SELECT brand, importance, activity_type,
+                   COALESCE(NULLIF(title_ko,''), LEFT(NULLIF(details,''),70), title) AS title_ko,
+                   source_url, published_date::date::text AS pub_date, details
+            FROM {DB_SCHEMA}.news_articles
+            WHERE importance IN ('high', 'medium')
+              AND {date_filter}
+            ORDER BY brand,
+                     CASE importance WHEN 'high' THEN 0 ELSE 1 END,
+                     published_date DESC
+        """), params,
+    ).fetchall()
+
+    brand_totals: dict = {r[0]: {"total": r[1] or 0, "high": r[2] or 0} for r in high_rows}
+    brand_acts: dict = defaultdict(list)
+    for r in act_rows:
+        brand_acts[r[0]].append((r[1] or "기타", r[2] or 0))
+    brand_countries: dict = defaultdict(list)
+    for r in country_rows:
+        brand_countries[r[0]].append([r[1], r[2] or 0])
+    brand_arts: dict = defaultdict(list)
+    for r in art_rows:
+        b = r[0]
+        if len(brand_arts[b]) < 5:
+            brand_arts[b].append({
+                "imp": r[1] or "", "act": r[2] or "기타",
+                "title_ko": r[3] or "", "url": r[4] or "",
+                "details": r[6] or "", "date": r[5] or "",
+            })
+
+    result: dict = {}
+    for brand in brand_totals:
+        acts = brand_acts.get(brand, [])
+        top_act, top_cnt = acts[0] if acts else ("기타", 0)
+        total = brand_totals[brand]["total"] or 1
+        result[brand] = {
+            "top_act":       top_act,
+            "top_pct":       round(top_cnt / total * 100),
+            "high_pct":      round(brand_totals[brand]["high"] / total * 100, 1),
+            "top_countries": brand_countries.get(brand, [])[:3],
+            "articles":      brand_arts.get(brand, []),
+        }
+    return result
+
+
+def get_country_signal_stats(session: Session, days: int = 30) -> dict:
+    """국가별 신호 통계 반환 (세계지도용). {CC: {total, high, medium}}"""
+    cutoff = _cutoff_iso(days)
+    rows = session.execute(
+        text(f"""
+            SELECT country,
+                   COUNT(*) AS total,
+                   COUNT(*) FILTER (WHERE importance = 'high') AS high,
+                   COUNT(*) FILTER (WHERE importance = 'medium') AS medium
+            FROM {DB_SCHEMA}.news_articles
+            WHERE published_date >= :cutoff
+            GROUP BY country
+        """),
+        {"cutoff": cutoff},
+    ).fetchall()
+    return {r[0]: {"total": r[1] or 0, "high": r[2] or 0, "medium": r[3] or 0} for r in rows}

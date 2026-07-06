@@ -3,6 +3,7 @@ APScheduler 스케줄
 
 - Tier1 브랜드 × Tier1 국가: 매일 06:00 KST
 - 전체 브랜드 × 전체 국가: 매주 월요일 03:00 KST (주간 풀스캔)
+- 주간 모멘텀 계산: 매주 월요일 02:00 KST
 - 주간 중복 정리: 매주 일요일 02:00 KST
 """
 
@@ -22,12 +23,31 @@ from deduplication.url_hasher import title_similarity
 logger = logging.getLogger(__name__)
 
 
+def _get_tier_brands(tier: int) -> list[str]:
+    """monitored_brands DB에서 활성 브랜드 목록 조회. DB 실패 시 하드코딩 fallback."""
+    try:
+        from sqlalchemy import text
+        session = get_session()
+        rows = session.execute(text(
+            "SELECT name FROM rival_intel.monitored_brands "
+            "WHERE tier = :tier AND is_active = TRUE ORDER BY name"
+        ), {"tier": tier}).fetchall()
+        session.close()
+        brands = [r[0] for r in rows]
+        if brands:
+            return brands
+    except Exception as e:
+        logger.warning("DB 브랜드 목록 조회 실패, fallback 사용: %s", e)
+    return TIER1_BRANDS if tier == 1 else ALL_BRANDS
+
+
 def job_daily_tier1() -> None:
     """Tier1 브랜드 × Tier1 국가 — 매일 수집 (구글RSS + 전문미디어 + 장업신문 + PRTIMES)."""
-    reset_jangup_cache()  # 장업신문 피드 캐시 초기화 (하루 1회 새로 fetch)
+    reset_jangup_cache()
+    tier1 = _get_tier_brands(1)
     logger.info("=== [일별] Tier1 수집 시작 (브랜드 %d개 x 국가 %d개) ===",
-                len(TIER1_BRANDS), len(TIER1_COUNTRIES))
-    for brand in TIER1_BRANDS:
+                len(tier1), len(TIER1_COUNTRIES))
+    for brand in tier1:
         for country in TIER1_COUNTRIES:
             try:
                 run_pipeline(brand, country)
@@ -39,15 +59,48 @@ def job_daily_tier1() -> None:
 def job_weekly_full() -> None:
     """전체 브랜드 × 전체 국가 — 주간 풀스캔."""
     all_countries = list(COUNTRIES.keys())
+    try:
+        from sqlalchemy import text
+        session = get_session()
+        rows = session.execute(text(
+            "SELECT name FROM rival_intel.monitored_brands WHERE is_active = TRUE ORDER BY tier, name"
+        )).fetchall()
+        session.close()
+        all_active = [r[0] for r in rows] or ALL_BRANDS
+    except Exception:
+        all_active = ALL_BRANDS
     logger.info("=== [주간] 전체 수집 시작 (브랜드 %d개 x 국가 %d개) ===",
-                len(ALL_BRANDS), len(all_countries))
-    for brand in ALL_BRANDS:
+                len(all_active), len(all_countries))
+    for brand in all_active:
         for country in all_countries:
             try:
                 run_pipeline(brand, country)
             except Exception as e:
                 logger.error("오류 [%s/%s]: %s", brand, country, e)
     logger.info("=== [주간] 전체 수집 완료 ===")
+
+
+def job_weekly_momentum() -> None:
+    """브랜드 모멘텀 스코어 계산 및 DB 업데이트. 승급/강등 후보 로깅."""
+    logger.info("=== [주간] 모멘텀 계산 시작 ===")
+    from analytics.queries import compute_brand_momentum, upsert_brand_momentum
+    session = get_session()
+    try:
+        scores = compute_brand_momentum(session)
+        for s in scores:
+            upsert_brand_momentum(session, s["brand"], s["momentum"])
+            if s["signal"] == "rising" and s["tier"] == 2 and s["recent_4w"] >= 5:
+                logger.info("⬆  승급 후보: %-20s  momentum=%.2fx  (최근4주=%d건)",
+                            s["brand"], s["momentum"], s["recent_4w"])
+            elif s["signal"] == "cooling" and s["tier"] == 1 and s["recent_4w"] <= 2:
+                logger.info("⬇  강등 후보: %-20s  momentum=%.2fx  (최근4주=%d건)",
+                            s["brand"], s["momentum"], s["recent_4w"])
+        logger.info("모멘텀 갱신 완료 (%d개 브랜드)", len(scores))
+    except Exception as e:
+        logger.error("모멘텀 계산 오류: %s", e)
+    finally:
+        session.close()
+    logger.info("=== [주간] 모멘텀 계산 완료 ===")
 
 
 def job_weekly_dedup() -> None:
@@ -96,6 +149,16 @@ def create_scheduler() -> BlockingScheduler:
         coalesce=True,
     )
 
+    # 매주 월요일 02:00 KST — 모멘텀 계산 (풀스캔 전 실행)
+    scheduler.add_job(
+        job_weekly_momentum,
+        trigger=CronTrigger(day_of_week="mon", hour=2, minute=0),
+        id="weekly_momentum",
+        name="[주간] 브랜드 모멘텀 계산",
+        max_instances=1,
+        coalesce=True,
+    )
+
     # 매주 일요일 02:00 KST
     scheduler.add_job(
         job_weekly_dedup,
@@ -119,11 +182,28 @@ def create_scheduler() -> BlockingScheduler:
 
 def start() -> None:
     """스케줄러 시작 (블로킹 — Ctrl+C 로 종료)."""
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    import os
+    log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
+    os.makedirs(log_dir, exist_ok=True)
+    log_path = os.path.join(log_dir, "scheduler.log")
+    file_handler = logging.FileHandler(log_path, encoding="utf-8")
+    file_handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-    )
+    ))
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(logging.Formatter(
+        "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    ))
+    # Windows 콘솔 인코딩 안전 처리
+    import sys
+    if hasattr(stream_handler.stream, "reconfigure"):
+        try:
+            stream_handler.stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+    logging.basicConfig(level=logging.INFO, handlers=[file_handler, stream_handler])
     scheduler = create_scheduler()
 
     logger.info("스케줄러 시작")

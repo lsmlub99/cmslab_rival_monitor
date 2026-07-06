@@ -1,6 +1,6 @@
 from datetime import datetime
 from sqlalchemy import (
-    BigInteger, Boolean, Column, Float, Index, Integer, String, Text, TIMESTAMP, create_engine
+    BigInteger, Boolean, Column, Float, Index, Integer, ARRAY, String, Text, TIMESTAMP, create_engine
 )
 from sqlalchemy.orm import DeclarativeBase, Session
 
@@ -44,7 +44,8 @@ class NewsArticle(Base):
     classification_confidence = Column(Float)
     classifier_model = Column(String(50))
 
-    # 시스템 필드
+    # 수집 메타데이터
+    source_country = Column(String(10))    # 파이프라인 수집 국가 (country와 다를 수 있음)
     collected_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
     collector_type = Column(String(50))
 
@@ -105,6 +106,21 @@ class BrandInsight(Base):
     generated_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
 
+class MonitoredBrand(Base):
+    """동적 브랜드 티어 + 모멘텀 관리."""
+    __tablename__ = "monitored_brands"
+    __table_args__ = {"schema": DB_SCHEMA}
+
+    name            = Column(String(100), primary_key=True)
+    tier            = Column(Integer, default=2)       # 1=daily, 2=weekly
+    ko_names        = Column(ARRAY(String))
+    is_active       = Column(Boolean, default=True)
+    momentum_score  = Column(Float, default=0.0)
+    last_scored     = Column(TIMESTAMP(timezone=True))
+    tier_changed_at = Column(TIMESTAMP(timezone=True))
+    note            = Column(Text)
+
+
 _engine = None
 
 
@@ -141,6 +157,7 @@ def migrate_tables():
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS article_body TEXT",
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS title_ko VARCHAR(400)",
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS article_body_ko TEXT",
+        f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS source_country VARCHAR(10)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

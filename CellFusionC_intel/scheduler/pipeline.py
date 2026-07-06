@@ -102,6 +102,7 @@ def _run_single(
                 published_date=raw.published,
                 brand=clf.brand,
                 country=clf.country,
+                source_country=country,      # 파이프라인 수집 국가 (크로스마켓 추적용)
                 activity_type=clf.activity_type,
                 details=clf.details,
                 product_name=clf.product_name,

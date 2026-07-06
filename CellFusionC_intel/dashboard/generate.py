@@ -20,6 +20,7 @@ from analytics.queries import (
     get_brand_country_matrix,
     get_brand_high_ratio,
     get_brand_insights_raw,
+    get_brand_radar,
     get_collection_stats,
     get_country_signal_stats,
     get_high_articles,
@@ -223,7 +224,14 @@ def _render_high_table(articles: list) -> str:
             f'{body_ko_line}'
             f'{product_line}{note_line}'
             f'{orig_body_line}'
-            f'<p class="src-info">출처: {_esc(art.get("source_name","?"))}</p>'
+            f'<p class="src-info">출처: {_esc(art.get("source_name","?"))}'
+            + (
+                f' &nbsp;<span style="color:var(--gold);font-size:10px">↗ 크로스마켓 '
+                f'(수집:{_esc(art["source_country"])}→시장:{_esc(art["country"])})</span>'
+                if art.get("source_country") and art.get("source_country") != art.get("country")
+                else ""
+            ) +
+            f'</p>'
             f'</div></td></tr>'
         )
 
@@ -359,6 +367,51 @@ def _render_filter_bar(brands: list, activity_types: list) -> str:
         '<span class="filter-count" id="filter-count"></span>'
         '</div>'
     )
+
+
+def _render_brand_radar(radar: list) -> str:
+    """Brand Radar — 모멘텀 스코어 바 + 티어 표시."""
+    if not radar:
+        return '<p class="no-data">모멘텀 데이터 없음 (첫 주간 계산 전)</p>'
+
+    SIGNAL_ICON  = {"rising": "▲", "stable": "▶", "cooling": "▼"}
+    SIGNAL_COLOR = {"rising": "#4ab884", "stable": "#8891ab", "cooling": "#e05353"}
+    TIER_LABEL   = {1: "Tier 1", 2: "Tier 2"}
+
+    rows = []
+    max_m = max((s["momentum"] for s in radar), default=1.0)
+    max_m = max(max_m, 1.0)
+    for s in radar:
+        brand   = _esc(s["brand"])
+        m       = s["momentum"]
+        signal  = s.get("signal", "stable")
+        tier    = s.get("tier", 2)
+        recent  = s.get("recent_4w", 0)
+        prev    = s.get("prev_4w", 0)
+        icon    = SIGNAL_ICON[signal]
+        color   = SIGNAL_COLOR[signal]
+        bar_pct = min(int(m / max_m * 100), 100)
+        tier_cls = "radar-tier1" if tier == 1 else "radar-tier2"
+
+        promo_badge = ""
+        if signal == "rising" and tier == 2 and recent >= 5:
+            promo_badge = '<span class="radar-promo">승급 후보</span>'
+        elif signal == "cooling" and tier == 1 and recent <= 2:
+            promo_badge = '<span class="radar-demote">강등 후보</span>'
+
+        rows.append(
+            f'<div class="radar-row">'
+            f'<span class="radar-icon" style="color:{color}">{icon}</span>'
+            f'<span class="radar-brand">{brand}</span>'
+            f'<span class="{tier_cls}">{TIER_LABEL[tier]}</span>'
+            f'<div class="radar-bar-bg"><div class="radar-bar-fill" '
+            f'style="width:{bar_pct}%;background:{color}"></div></div>'
+            f'<span class="radar-score" style="color:{color}">{m:.1f}x</span>'
+            f'<span class="radar-meta">{recent}건↗{prev}건</span>'
+            f'{promo_badge}'
+            f'</div>'
+        )
+    return '<div class="radar-list">' + "".join(rows) + '</div>'
 
 
 def _render_brand_high_ratio(brand_high: list) -> str:
@@ -1000,6 +1053,38 @@ a:hover { color: var(--gold); }
 .dd-link { display: inline-block; margin-top: 4px; font-size: 10px; color: var(--blue); }
 .dd-link:hover { color: var(--gold); }
 
+/* ── Brand Radar ── */
+.radar-list { display: flex; flex-direction: column; gap: 7px; }
+.radar-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 10px;
+  background: var(--elevated); border: 1px solid var(--border); border-radius: 3px;
+}
+.radar-icon { font-size: 10px; font-weight: 700; flex-shrink: 0; width: 12px; text-align: center; }
+.radar-brand { font-size: 12px; font-weight: 600; color: var(--hi); min-width: 130px; white-space: nowrap; }
+.radar-tier1 {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px;
+  background: rgba(200,169,110,0.12); color: var(--gold);
+  letter-spacing: 0.06em; white-space: nowrap; flex-shrink: 0;
+}
+.radar-tier2 {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px;
+  background: rgba(78,88,112,0.3); color: var(--mid);
+  letter-spacing: 0.06em; white-space: nowrap; flex-shrink: 0;
+}
+.radar-bar-bg { flex: 1; height: 6px; background: var(--deep); border-radius: 1px; overflow: hidden; min-width: 60px; }
+.radar-bar-fill { height: 100%; border-radius: 1px; transition: width 0.5s ease; }
+.radar-score { font-size: 11px; font-weight: 700; min-width: 36px; text-align: right; font-variant-numeric: tabular-nums; }
+.radar-meta { font-size: 10px; color: var(--lo); white-space: nowrap; min-width: 80px; font-variant-numeric: tabular-nums; }
+.radar-promo {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px; white-space: nowrap;
+  background: rgba(74,184,132,0.15); color: #4ab884; letter-spacing: 0.04em; flex-shrink: 0;
+}
+.radar-demote {
+  font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px; white-space: nowrap;
+  background: rgba(224,83,83,0.12); color: #e05353; letter-spacing: 0.04em; flex-shrink: 0;
+}
+
 /* ── Insight Cards ── */
 .insight-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 @media (max-width: 1100px) { .insight-grid { grid-template-columns: 1fr 1fr; } }
@@ -1482,6 +1567,7 @@ def _build_full_html(
     days: int,
     country_stats: dict = None,
     period_data: dict = None,
+    brand_radar: list = None,
 ) -> str:
     has_chartjs = bool(chartjs_src)
     generated = datetime.utcnow() + timedelta(hours=9)
@@ -1495,6 +1581,7 @@ def _build_full_html(
     heatmap_html      = _render_heatmap(matrix)
     brand_high_html   = _render_brand_high_ratio(brand_high)
     brand_act_html    = _render_brand_activity_bar(brand_act)
+    radar_html        = _render_brand_radar(brand_radar or [])
     insights_script   = _build_insights_script(brand_insights)
     trend_html        = _canvas_or_table_trend(trend, has_chartjs)
     activity_html     = _canvas_or_table_activity(distribution, has_chartjs)
@@ -1628,6 +1715,15 @@ def _build_full_html(
     </div>
     {brand_act_html}
     <div class="legend-row" id="stacked-legend"></div>
+  </div>
+
+  <!-- Brand Radar — 모멘텀 기반 티어 신호 -->
+  <div class="section">
+    <div class="section-title">
+      Brand Radar
+      <span class="section-sub">최근 4주 vs 직전 4주 기사량 비율 · ▲Rising / ▶Stable / ▼Cooling</span>
+    </div>
+    {radar_html}
   </div>
 
   <!-- Brand Insight Cards (Claude API 자동생성) -->
@@ -2009,6 +2105,10 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
         brand_high    = get_brand_high_ratio(session, days=days)
         insights_raw  = get_brand_insights_raw(session, days=days)
         country_stats = get_country_signal_stats(session, days=days)
+        try:
+            brand_radar = get_brand_radar(session)
+        except Exception:
+            brand_radar = []
 
         # 기간 선택기용 멀티 기간 데이터 (30/60/90일 + 현재 days)
         preset_periods = sorted(set([30, 60, 90, days]))
@@ -2079,6 +2179,7 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
         brand_act, brand_high, brand_insights, chartjs_src, days,
         country_stats=country_stats,
         period_data=period_data,
+        brand_radar=brand_radar,
     )
 
     abs_path = os.path.abspath(output_path)

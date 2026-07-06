@@ -540,3 +540,107 @@ def get_country_signal_stats(session: Session, days: int = 30) -> dict:
         {"cutoff": cutoff},
     ).fetchall()
     return {r[0]: {"total": r[1] or 0, "high": r[2] or 0, "medium": r[3] or 0} for r in rows}
+
+
+def compute_brand_momentum(session: Session) -> list[dict]:
+    """
+    브랜드별 모멘텀 스코어 계산.
+
+    momentum = recent_4w_count / max(prev_4w_count, 1)
+    - > 1.5  → Rising  (인디 브랜드 급부상 / Tier2→1 승급 후보)
+    - 0.7~1.5 → Stable
+    - < 0.7  → Cooling (기존 브랜드 침체 / Tier1→2 강등 후보)
+
+    Returns list of dicts sorted by momentum desc.
+    """
+    now = datetime.utcnow()
+    recent_start = (now - timedelta(weeks=4)).isoformat()
+    prev_start   = (now - timedelta(weeks=8)).isoformat()
+    prev_end     = recent_start
+
+    rows = session.execute(text(f"""
+        SELECT
+            brand,
+            COUNT(*) FILTER (WHERE published_date >= :recent_start)               AS recent_4w,
+            COUNT(*) FILTER (WHERE published_date >= :prev_start
+                              AND  published_date <  :prev_end)                    AS prev_4w,
+            COUNT(*) FILTER (WHERE published_date >= :recent_start
+                              AND  importance = 'high')                            AS recent_high,
+            COUNT(*)                                                               AS total
+        FROM {DB_SCHEMA}.news_articles
+        WHERE published_date >= :prev_start
+        GROUP BY brand
+        ORDER BY brand
+    """), {
+        "recent_start": recent_start,
+        "prev_start":   prev_start,
+        "prev_end":     prev_end,
+    }).fetchall()
+
+    # monitored_brands에서 현재 tier 가져오기
+    tier_rows = session.execute(text(
+        f"SELECT name, tier FROM {DB_SCHEMA}.monitored_brands WHERE is_active = TRUE"
+    )).fetchall()
+    tier_map = {r[0]: r[1] for r in tier_rows}
+
+    result = []
+    for r in rows:
+        brand, recent, prev, recent_high, total = r[0], r[1] or 0, r[2] or 0, r[3] or 0, r[4] or 0
+        momentum = round(recent / max(prev, 1), 2)
+        if momentum > 1.5:
+            signal = "rising"
+        elif momentum < 0.7:
+            signal = "cooling"
+        else:
+            signal = "stable"
+        result.append({
+            "brand":        brand,
+            "tier":         tier_map.get(brand, 2),
+            "momentum":     momentum,
+            "signal":       signal,
+            "recent_4w":    recent,
+            "prev_4w":      prev,
+            "recent_high":  recent_high,
+            "total_8w":     total,
+        })
+
+    result.sort(key=lambda x: x["momentum"], reverse=True)
+    return result
+
+
+def upsert_brand_momentum(session: Session, brand: str, momentum: float) -> None:
+    """monitored_brands 테이블의 momentum_score + last_scored 갱신."""
+    session.execute(text(f"""
+        UPDATE {DB_SCHEMA}.monitored_brands
+        SET momentum_score = :momentum,
+            last_scored    = NOW()
+        WHERE name = :brand
+    """), {"brand": brand, "momentum": momentum})
+    session.commit()
+
+
+def get_brand_radar(session: Session) -> list[dict]:
+    """대시보드 Brand Radar용: momentum + tier 정보 반환."""
+    scores = compute_brand_momentum(session)
+
+    # DB에 없는 브랜드(아직 기사 없는 Tier2) 보완
+    all_brands_rows = session.execute(text(
+        f"SELECT name, tier, momentum_score FROM {DB_SCHEMA}.monitored_brands WHERE is_active = TRUE"
+    )).fetchall()
+    scored_names = {s["brand"] for s in scores}
+    for r in all_brands_rows:
+        if r[0] not in scored_names:
+            scores.append({
+                "brand":       r[0],
+                "tier":        r[1],
+                "momentum":    r[2] or 0.0,
+                "signal":      "stable",
+                "recent_4w":   0,
+                "prev_4w":     0,
+                "recent_high": 0,
+                "total_8w":    0,
+            })
+
+    scores.sort(key=lambda x: (-x["tier"] == 1, x["momentum"]), reverse=False)
+    scores.sort(key=lambda x: (x["tier"], -x["momentum"]))
+    return scores

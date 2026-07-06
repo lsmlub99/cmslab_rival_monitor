@@ -5,12 +5,16 @@ APScheduler 스케줄
 - 전체 브랜드 × 전체 국가: 매주 월요일 03:00 KST (주간 풀스캔)
 - 주간 모멘텀 계산: 매주 월요일 02:00 KST
 - 주간 중복 정리: 매주 일요일 02:00 KST
+- Render keep-alive 핑: 14분마다 (무료 플랜 슬립 방지)
 """
 
 import logging
+import os
+import urllib.request
 
-from apscheduler.schedulers.blocking import BlockingScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 from config.brands import TIER1_BRANDS, ALL_BRANDS, TIER1_COUNTRIES, COUNTRIES
 from config.settings import TITLE_SIMILARITY_THRESHOLD
@@ -103,6 +107,18 @@ def job_weekly_momentum() -> None:
     logger.info("=== [주간] 모멘텀 계산 완료 ===")
 
 
+def job_keepalive() -> None:
+    """Render 무료 플랜 슬립 방지 — 자기 자신 /health 핑."""
+    url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
+    if not url:
+        return
+    try:
+        urllib.request.urlopen(f"{url}/health", timeout=10)
+        logger.debug("keep-alive ping OK: %s", url)
+    except Exception as e:
+        logger.warning("keep-alive ping 실패: %s", e)
+
+
 def job_weekly_dedup() -> None:
     """제목 유사도 기반 중복 쌍 기록."""
     logger.info("=== 주간 중복 정리 시작 ===")
@@ -126,8 +142,8 @@ def job_weekly_dedup() -> None:
     logger.info("=== 주간 중복 정리 완료 ===")
 
 
-def create_scheduler() -> BlockingScheduler:
-    scheduler = BlockingScheduler(timezone="Asia/Seoul")
+def create_scheduler() -> BackgroundScheduler:
+    scheduler = BackgroundScheduler(timezone="Asia/Seoul")
 
     # 매일 06:00 KST
     scheduler.add_job(
@@ -177,12 +193,22 @@ def create_scheduler() -> BlockingScheduler:
         max_instances=1,
     )
 
+    # 14분마다 — Render 무료 플랜 슬립 방지 (15분 비활성 → 슬립)
+    scheduler.add_job(
+        job_keepalive,
+        trigger=IntervalTrigger(minutes=14),
+        id="keepalive",
+        name="[상시] Render keep-alive 핑",
+        max_instances=1,
+    )
+
     return scheduler
 
 
 def start() -> None:
-    """스케줄러 시작 (블로킹 — Ctrl+C 로 종료)."""
-    import os
+    """스케줄러 독립 실행 (CLI용 — Ctrl+C 로 종료)."""
+    import sys
+    import time
     log_dir = os.path.join(os.path.dirname(__file__), "..", "logs")
     os.makedirs(log_dir, exist_ok=True)
     log_path = os.path.join(log_dir, "scheduler.log")
@@ -196,8 +222,6 @@ def start() -> None:
         "%(asctime)s %(levelname)s [%(name)s] %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     ))
-    # Windows 콘솔 인코딩 안전 처리
-    import sys
     if hasattr(stream_handler.stream, "reconfigure"):
         try:
             stream_handler.stream.reconfigure(encoding="utf-8")
@@ -210,7 +234,10 @@ def start() -> None:
     for job in scheduler.get_jobs():
         logger.info("  %-14s %s", job.id, job.name)
 
+    scheduler.start()
     try:
-        scheduler.start()
+        while True:
+            time.sleep(60)
     except (KeyboardInterrupt, SystemExit):
+        scheduler.shutdown()
         logger.info("스케줄러 종료")

@@ -76,10 +76,17 @@ def _prebuild():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 서버 시작 시 백그라운드 스레드에서 대시보드 생성
+    from scheduler.runner import create_scheduler
+    scheduler = create_scheduler()
+    scheduler.start()
+    logger.info("스케줄러 시작됨 (잡 %d개)", len(scheduler.get_jobs()))
+
     t = threading.Thread(target=_prebuild, daemon=True)
     t.start()
     yield
+
+    scheduler.shutdown(wait=False)
+    logger.info("스케줄러 종료됨")
 
 
 app = FastAPI(title="K-뷰티 경쟁사 인텔리전스", docs_url="/docs", lifespan=lifespan)

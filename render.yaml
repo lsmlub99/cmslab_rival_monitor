@@ -18,3 +18,5 @@ services:
         value: postgres
       - key: DB_PORT
         value: "5432"
+      - key: RENDER_EXTERNAL_URL
+        sync: false

@@ -202,7 +202,7 @@ def _render_high_table(articles: list) -> str:
             f'{"…" if len(orig_body) > 1500 else ""}</pre></details>'
             if orig_body else ""
         )
-        title_disp2 = title_display[:85] + ("…" if len(title_display) > 85 else "")
+        title_disp2 = title_display[:160] + ("…" if len(title_display) > 160 else "")
 
         rows.append(
             f'<tr class="main-row" data-brand="{_esc(art["brand"])}" data-act="{_esc(act_label)}" onclick="toggleRow({i})">'
@@ -857,7 +857,7 @@ a:hover { color: var(--gold); }
 .date-cell { color: var(--mid); font-size: 11px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .flag-cell { white-space: nowrap; }
 .conf-cell { color: var(--mid); font-size: 11px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
-.title-cell { max-width: 320px; }
+.title-cell { max-width: 480px; word-break: break-word; }
 
 /* ── Heatmap ── */
 .heatmap-wrap { max-height: 400px; overflow: auto; }
@@ -1694,7 +1694,7 @@ function renderArticlesTable(arts) {{
       ? '<span class="imp-badge imp-high">HIGH</span>'
       : '<span class="imp-badge imp-med">MED</span>';
     var urlCell = a.url ? '<a href="' + escH(a.url) + '" target="_blank" onclick="event.stopPropagation()">원문↗</a>' : '';
-    var t = String(a.title||''); if(t.length > 85) t = t.substring(0,85)+'…';
+    var t = String(a.title||''); if(t.length > 160) t = t.substring(0,160)+'…';
     rows += '<tr class="main-row" data-brand="' + escH(a.brand) + '" data-act="' + escH(a.act) + '" onclick="toggleRow(' + i + ')">'
       + '<td class="date-cell">' + escH(a.date) + '</td>'
       + '<td>' + impB + ' <span class="brand-tag">' + escH(a.brand) + '</span></td>'

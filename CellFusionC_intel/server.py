@@ -10,6 +10,7 @@ import html as html_lib
 import logging
 import os
 import sys
+import threading
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
@@ -18,15 +19,25 @@ sys.path.insert(0, _HERE)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_HERE, ".env"))
 
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query, BackgroundTasks
 from fastapi.responses import HTMLResponse, JSONResponse
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="K-뷰티 경쟁사 인텔리전스", docs_url="/docs")
-
 # 생성된 HTML 캐시 (메모리)
 _dashboard_html: str = ""
+
+_LOADING_PAGE = """<!doctype html>
+<html><head><meta charset="utf-8"><meta http-equiv="refresh" content="5">
+<title>K-뷰티 인텔리전스 — 로딩 중</title>
+<style>body{display:flex;align-items:center;justify-content:center;height:100vh;margin:0;
+font-family:sans-serif;background:#0f172a;color:#94a3b8;}
+.box{text-align:center;}.spinner{width:40px;height:40px;border:3px solid #334155;
+border-top-color:#6366f1;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 20px;}
+@keyframes spin{to{transform:rotate(360deg);}}</style></head>
+<body><div class="box"><div class="spinner"></div>
+<p>대시보드 생성 중입니다...<br><small>5초마다 자동 새로고침</small></p></div></body></html>"""
 
 
 def _build_dashboard() -> str:
@@ -36,14 +47,39 @@ def _build_dashboard() -> str:
         return f.read()
 
 
+def _prebuild():
+    global _dashboard_html
+    try:
+        logger.info("대시보드 사전 생성 시작")
+        _dashboard_html = _build_dashboard()
+        logger.info("대시보드 사전 생성 완료")
+    except Exception as e:
+        logger.error("대시보드 사전 생성 실패: %s", e)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 서버 시작 시 백그라운드 스레드에서 대시보드 생성
+    t = threading.Thread(target=_prebuild, daemon=True)
+    t.start()
+    yield
+
+
+app = FastAPI(title="K-뷰티 경쟁사 인텔리전스", docs_url="/docs", lifespan=lifespan)
+
+
 # ── 대시보드 ────────────────────────────────────────────────────────────────
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "ready": bool(_dashboard_html)}
+
 
 @app.get("/", response_class=HTMLResponse)
 async def dashboard():
     """메인 대시보드."""
-    global _dashboard_html
     if not _dashboard_html:
-        _dashboard_html = _build_dashboard()
+        return HTMLResponse(_LOADING_PAGE, status_code=200)
     return _dashboard_html
 
 

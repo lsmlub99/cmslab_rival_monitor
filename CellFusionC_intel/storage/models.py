@@ -41,6 +41,7 @@ class NewsArticle(Base):
     article_body_ko = Column(Text)       # GPT가 번역·요약한 본문 한국어 (최대 500자)
 
     # 분류 메타데이터
+    brand_focus = Column(String(20))        # primary / secondary / incidental (NULL=구기사)
     classification_confidence = Column(Float)
     classifier_model = Column(String(50))
 
@@ -158,6 +159,7 @@ def migrate_tables():
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS title_ko VARCHAR(400)",
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS article_body_ko TEXT",
         f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS source_country VARCHAR(10)",
+        f"ALTER TABLE {DB_SCHEMA}.news_articles ADD COLUMN IF NOT EXISTS brand_focus VARCHAR(20)",
     ]
     with engine.connect() as conn:
         for sql in migrations:

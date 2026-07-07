@@ -70,9 +70,15 @@ def get_high_articles(
             SELECT id, title, brand, country, activity_type,
                    details, product_name, source_url, source_name,
                    published_date, note, classification_confidence,
-                   title_ko, article_body, article_body_ko, importance
+                   title_ko, article_body, article_body_ko, importance,
+                   brand_focus, source_country
             FROM {DB_SCHEMA}.news_articles
             WHERE importance IN ('high', 'medium')
+              AND (
+                  brand_focus IS NULL           -- 구기사: 필터 미적용
+                  OR brand_focus != 'incidental' -- 신기사: incidental 제외
+                  OR importance = 'high'         -- HIGH는 incidental이어도 표시
+              )
               AND published_date >= :cutoff
               {where_extras}
             ORDER BY
@@ -100,6 +106,8 @@ def get_high_articles(
             "article_body":     r[13],
             "article_body_ko":  r[14],
             "importance":       r[15] or "high",
+            "brand_focus":      r[16],
+            "source_country":   r[17],
         }
         for r in rows
     ]

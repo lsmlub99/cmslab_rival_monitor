@@ -2095,7 +2095,6 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
     session = get_session()
     try:
         stats         = get_collection_stats(session, days=days)
-        high_articles = get_high_articles(session, days=days)
         matrix        = get_brand_country_matrix(session, days=days)
         trend         = get_weekly_trend(session, weeks=12)
         distribution  = get_activity_distribution(session, days=days)
@@ -2110,17 +2109,31 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
 
         # 기간 선택기용 멀티 기간 데이터 (30/60/90일 + 현재 days)
         preset_periods = sorted(set([30, 60, 90, days]))
+        _today = datetime.utcnow().date()
+        max_period = max(preset_periods)
+
+        # 기사 최대 기간(90일) 1회만 로드 — 작은 기간은 날짜 필터링으로 재사용
+        # article_body TEXT(2000자) 포함 다중 쿼리는 512MB OOM 원인
+        _all_articles = get_high_articles(session, days=max_period)
+        high_articles = [
+            a for a in _all_articles
+            if _fmt_date(a.get("published_date", "")) >= (_today - timedelta(days=days)).isoformat()
+        ] if days < max_period else _all_articles
+
         period_data: dict = {}
         period_insights_raw: dict = {}
         period_cache: dict = {}
         period_date_ranges: dict = {}
-        _today = datetime.utcnow().date()
         for p in preset_periods:
-            p_arts   = get_high_articles(session, days=p)
+            p_cutoff_str = (_today - timedelta(days=p)).isoformat()
+            p_arts = [
+                a for a in _all_articles
+                if _fmt_date(a.get("published_date", "")) >= p_cutoff_str
+            ] if p < max_period else _all_articles
             p_stats  = get_collection_stats(session, days=p)
             p_cstats = get_country_signal_stats(session, days=p)
             period_insights_raw[p] = get_brand_insights_raw(session, days=p)
-            _from = (_today - timedelta(days=p)).isoformat()
+            _from = p_cutoff_str
             _to   = _today.isoformat()
             period_date_ranges[p]  = (_from, _to)
             period_cache[p]        = get_insights_cache(session, _from, _to)

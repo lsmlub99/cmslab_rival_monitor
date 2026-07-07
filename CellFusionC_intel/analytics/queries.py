@@ -84,6 +84,7 @@ def get_high_articles(
             ORDER BY
                 CASE importance WHEN 'high' THEN 0 ELSE 1 END,
                 published_date DESC
+            LIMIT 600
         """),
         params,
     ).fetchall()

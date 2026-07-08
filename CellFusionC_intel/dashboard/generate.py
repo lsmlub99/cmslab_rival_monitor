@@ -51,6 +51,7 @@ ACTIVITY_LABELS = {
     "인플루언서_협업": "인플루언서 협업",
     "투자_BD":        "투자·BD",
     "브랜드_마케팅":  "브랜드 마케팅",
+    "실적_공시":      "실적·공시",
     "기타":           "기타",
 }
 
@@ -1145,6 +1146,8 @@ _WORLDMAP_CSS = """
 .wm-section { background: #080d17; border-color: rgba(30,70,150,0.3); }
 .wm-section .section-title { color: #94a3b8; border-bottom-color: rgba(30,70,150,0.3); }
 .wm-section .section-sub   { color: #4a6080; }
+.wm-layout { display: flex; gap: 12px; align-items: stretch; }
+.wm-map-col { flex: 0 0 65%; min-width: 0; }
 .worldmap-container {
   position: relative;
   overflow: hidden;
@@ -1180,32 +1183,162 @@ _WORLDMAP_CSS = """
 .wm-legend-overlay {
   position: absolute;
   top: 10px; right: 12px;
-  display: flex; gap: 10px; z-index: 5;
+  display: flex; flex-direction: column; gap: 4px; z-index: 5;
+  background: rgba(5,12,24,0.75);
+  padding: 6px 9px;
+  border-radius: 4px;
+  border: 1px solid rgba(30,80,160,0.2);
 }
+.wm-lo-row { display: flex; gap: 8px; }
 .wm-lo-item {
   font-size: 10px; font-family: monospace; font-weight: 700;
-  letter-spacing: 0.5px; opacity: 0.65;
+  letter-spacing: 0.5px; opacity: 0.75;
+}
+.wm-lo-size {
+  font-size: 9px; font-family: monospace; opacity: 0.5;
+  color: #64748b; letter-spacing: 0.3px;
 }
 .wm-lo-high { color: #f87171; }
 .wm-lo-med  { color: #fbbf24; }
 .wm-lo-low  { color: #22d3ee; }
+/* ── HIGH 기사 사이드 피드 ── */
+.wm-feed-col {
+  flex: 1 1 0;
+  min-width: 0;
+  background: #080d17;
+  border: 1px solid rgba(30,80,160,0.25);
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wm-feed-header {
+  padding: 9px 14px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #f87171;
+  letter-spacing: 1.2px;
+  border-bottom: 1px solid rgba(30,80,160,0.2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-shrink: 0;
+}
+.wm-feed-filter-label {
+  font-size: 9px; color: #4a6080; font-weight: 400; letter-spacing: 0;
+}
+.wm-feed-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(30,80,160,0.3) transparent;
+}
+.wm-feed-item {
+  padding: 9px 14px;
+  border-bottom: 1px solid rgba(30,80,160,0.1);
+  cursor: default;
+}
+.wm-feed-item:hover { background: rgba(30,80,160,0.08); }
+.wm-feed-item.hidden { display: none; }
+.wm-feed-meta {
+  font-size: 9px;
+  color: #4a6080;
+  margin-bottom: 3px;
+  font-family: monospace;
+  display: flex;
+  gap: 6px;
+}
+.wm-feed-title {
+  font-size: 11px;
+  color: #94a3b8;
+  line-height: 1.45;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.wm-feed-more {
+  padding: 9px 14px;
+  text-align: center;
+  border-top: 1px solid rgba(30,80,160,0.2);
+  flex-shrink: 0;
+}
+.wm-feed-more a {
+  font-size: 10px;
+  color: #4a8fd4;
+  text-decoration: none;
+  letter-spacing: 0.5px;
+}
+.wm-feed-more a:hover { color: #94a3b8; }
+@media (max-width: 900px) {
+  .wm-layout { flex-direction: column; }
+  .wm-map-col { flex: none; }
+  .wm-feed-col { min-height: 220px; }
+}
 """
 
 
-def _render_worldmap_section() -> str:
+def _render_worldmap_section(high_articles: list | None = None) -> str:
+    import html as html_lib
+
+    feed_items = []
+    high_only = [a for a in (high_articles or []) if a.get("importance") == "high"][:14]
+    for a in high_only:
+        cc = a.get("country", "")
+        flag = COUNTRY_FLAGS.get(cc, "🌐")
+        date = _fmt_date(a.get("published_date", ""))[:10]
+        brand = _esc(a.get("brand", ""))
+        title = _esc(a.get("title_ko") or a.get("title") or (a.get("details") or "")[:80])
+        url = _esc(a.get("source_url") or "#")
+        feed_items.append(
+            f'<div class="wm-feed-item" data-country="{html_lib.escape(cc)}">'
+            f'<div class="wm-feed-meta">'
+            f'<span>{flag} {html_lib.escape(cc)}</span>'
+            f'<span>{html_lib.escape(brand)}</span>'
+            f'<span>{html_lib.escape(date)}</span>'
+            f'</div>'
+            f'<div class="wm-feed-title">'
+            f'<a href="{url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">'
+            f'{title}'
+            f'</a>'
+            f'</div>'
+            f'</div>'
+        )
+
+    feed_html = "".join(feed_items) if feed_items else '<div style="padding:20px 14px;color:#4a6080;font-size:11px;">최근 HIGH 기사 없음</div>'
+
     return (
         '<div class="section wm-section" id="worldmap-section">'
         '<div class="section-title">'
         '🌍 글로벌 신호 지도'
-        '<span class="section-sub">마커 클릭 → 해당국 기사 상세 / KR발 시그널 아크 표시</span>'
+        '<span class="section-sub">마커 클릭 → 해당국 HIGH 기사 필터</span>'
         '</div>'
+        '<div class="wm-layout">'
+        '<div class="wm-map-col">'
         '<div class="worldmap-container">'
         '<canvas id="worldmap-canvas"></canvas>'
         '<div id="worldmap-tooltip" class="wm-tooltip"></div>'
         '<div class="wm-legend-overlay">'
+        '<div class="wm-lo-row">'
         '<span class="wm-lo-item wm-lo-high">● HIGH</span>'
         '<span class="wm-lo-item wm-lo-med">● MED</span>'
         '<span class="wm-lo-item wm-lo-low">● LOW</span>'
+        '</div>'
+        '<div class="wm-lo-size">● 점 크기 = HIGH 기사 수</div>'
+        '<div class="wm-lo-size">○ glow 크기 = 전체 기사 수</div>'
+        '</div>'
+        '</div>'
+        '</div>'
+        '<div class="wm-feed-col">'
+        '<div class="wm-feed-header">'
+        '<span>⚡ HIGH 긴급 기사</span>'
+        '<span class="wm-feed-filter-label" id="wm-feed-filter-label">전체</span>'
+        '</div>'
+        f'<div class="wm-feed-list" id="wm-feed-list">{feed_html}</div>'
+        '<div class="wm-feed-more">'
+        '<a href="#articles-content" onclick="document.getElementById(\'articles-content\').scrollIntoView({behavior:\'smooth\'});return false;">전체 기사 목록 ↓</a>'
+        '</div>'
         '</div>'
         '</div>'
         '</div>'
@@ -1477,7 +1610,21 @@ def _build_worldmap_script(country_stats: dict) -> str:
   canvas.addEventListener('click', function(e) {{
     var r = canvas.getBoundingClientRect();
     var hit = hitTest(e.clientX-r.left, e.clientY-r.top);
-    if (hit) openHeatmapDrilldown('all', hit);
+    if (hit) {{
+      openHeatmapDrilldown('all', hit);
+      // HIGH 기사 사이드 피드 필터
+      var feedItems = document.querySelectorAll('#wm-feed-list .wm-feed-item');
+      var label = document.getElementById('wm-feed-filter-label');
+      feedItems.forEach(function(el) {{
+        el.classList.toggle('hidden', el.dataset.country !== hit);
+      }});
+      if (label) label.textContent = (CNAMES[hit] || hit) + ' ✕';
+      if (label) label.style.cursor = 'pointer';
+      if (label) label.onclick = function() {{
+        feedItems.forEach(function(el) {{ el.classList.remove('hidden'); }});
+        label.textContent = '전체'; label.style.cursor = 'default';
+      }};
+    }}
   }});
 }})();"""
 
@@ -1589,7 +1736,7 @@ def _build_full_html(
     chartjs_tag = f"<script>{chartjs_src}</script>" if has_chartjs else ""
 
     worldmap_css     = _WORLDMAP_CSS
-    worldmap_section = _render_worldmap_section()
+    worldmap_section = _render_worldmap_section(high_articles)
     worldmap_script  = _build_worldmap_script(country_stats or {})
 
     # Pre-compute JSON outside f-string to avoid {{...}} dict-in-set TypeError

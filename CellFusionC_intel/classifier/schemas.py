@@ -16,6 +16,7 @@ class NewsClassification(BaseModel):
         "인플루언서_협업",
         "투자_BD",
         "브랜드_마케팅",
+        "실적_공시",
         "기타",
     ] = Field(description="활동 유형")
     importance: Literal["high", "medium", "low"] = Field(description="중요도")

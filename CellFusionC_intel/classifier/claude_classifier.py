@@ -101,7 +101,7 @@ def _make_batch_schema() -> dict:
             "activity_type": {
                 "type": "string",
                 "enum": ["신시장_진출", "유통_채널", "신제품_런칭",
-                         "인플루언서_협업", "투자_BD", "브랜드_마케팅", "기타"],
+                         "인플루언서_협업", "투자_BD", "브랜드_마케팅", "실적_공시", "기타"],
                 "description": "활동 유형",
             },
             "importance":    {"type": "string", "enum": ["high", "medium", "low"]},

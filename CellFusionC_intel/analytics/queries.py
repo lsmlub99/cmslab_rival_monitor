@@ -578,6 +578,7 @@ def compute_brand_momentum(session: Session) -> list[dict]:
             COUNT(*)                                                               AS total
         FROM {DB_SCHEMA}.news_articles
         WHERE published_date >= :prev_start
+          AND (brand_focus != 'incidental' OR brand_focus IS NULL)
         GROUP BY brand
         ORDER BY brand
     """), {
@@ -592,16 +593,23 @@ def compute_brand_momentum(session: Session) -> list[dict]:
     )).fetchall()
     tier_map = {r[0]: r[1] for r in tier_rows}
 
+    import math
     result = []
     for r in rows:
         brand, recent, prev, recent_high, total = r[0], r[1] or 0, r[2] or 0, r[3] or 0, r[4] or 0
-        momentum = round(recent / max(prev, 1), 2)
+        # prev_4w가 3건 미만이면 이전 기간 데이터 부족 → momentum neutral 처리
+        if prev < 3:
+            momentum = 1.0
+        else:
+            momentum = round(recent / prev, 2)
         if momentum > 1.5:
             signal = "rising"
         elif momentum < 0.7:
             signal = "cooling"
         else:
             signal = "stable"
+        # HIGH 기사 1건 = 일반 기사 2건 가중치: 전략적 활동이 많은 브랜드가 상위에 위치
+        sort_score = (recent + recent_high * 2) * math.log1p(momentum)
         result.append({
             "brand":        brand,
             "tier":         tier_map.get(brand, 2),
@@ -611,13 +619,9 @@ def compute_brand_momentum(session: Session) -> list[dict]:
             "prev_4w":      prev,
             "recent_high":  recent_high,
             "total_8w":     total,
+            "_sort_score":  sort_score,
         })
 
-    import math
-    # 가중치 정렬: 순수 비율 대신 volume × momentum으로 줄세움
-    # → 5건×5.0x=25 < 65건×4.64x=301 이므로 소량 급등 브랜드가 상위 점령 방지
-    for r in result:
-        r["_sort_score"] = r["recent_4w"] * math.log1p(r["momentum"])
     result.sort(key=lambda x: x["_sort_score"], reverse=True)
     return result
 
@@ -658,6 +662,6 @@ def get_brand_radar(session: Session) -> list[dict]:
     import math
     for s in scores:
         if "_sort_score" not in s:
-            s["_sort_score"] = s["recent_4w"] * math.log1p(s["momentum"])
+            s["_sort_score"] = (s["recent_4w"] + s["recent_high"] * 2) * math.log1p(s["momentum"])
     scores.sort(key=lambda x: (x["tier"], -x["_sort_score"]))
     return scores

@@ -120,15 +120,15 @@ def _fmt_art_for_js(a: dict) -> dict:
 
 
 def _cell_color(value: int, max_value: int) -> str:
-    """히트맵 셀 배경색. 0=어두운 베이스, max=골드, 다크 테마."""
+    """히트맵 셀 배경색. 0=빈 셀, max=골드, 가독성 우선."""
     if max_value == 0 or value == 0:
-        return "background:#161922;color:#3e465c;"
-    norm = value / max_value
-    # 0 → #161922 (dark elevated), 1 → #7a5f2a (deep gold)
-    r = int(22  + norm * (122 - 22))
-    g = int(25  + norm * (95  - 25))
-    b = int(34  + norm * (42  - 34))
-    text = "#eceef5" if norm > 0.35 else "#8891ab"
+        return "background:#191e2e;color:#505870;"
+    norm = min(value / max_value, 1.0)
+    # 딥블루 → 골드 그라데이션 (명확한 구분)
+    r = int(28  + norm * (200 - 28))
+    g = int(40  + norm * (169 - 40))
+    b = int(65  + norm * (60  - 65))
+    text = "#f0f2f8" if norm > 0.2 else "#a0aabb"
     return f"background:rgb({r},{g},{b});color:{text};"
 
 
@@ -606,19 +606,19 @@ _NE_LAND_POLYS = [
 _DASHBOARD_CSS = """
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg:      #08090f;
-  --surface: #0f1118;
-  --elevated:#161922;
-  --deep:    #1b1f2e;
-  --border:  #1e2235;
-  --bhi:     #2c3356;
+  --bg:      #0c0e18;
+  --surface: #131620;
+  --elevated:#1a1e2e;
+  --deep:    #20243a;
+  --border:  #262b40;
+  --bhi:     #303660;
   --gold:    #c8a96e;
-  --blue:    #4a8fd4;
-  --hi:      #eceef5;
-  --mid:     #8891ab;
-  --lo:      #3e465c;
-  --high:    #e05353;
-  --med:     #d4943a;
+  --blue:    #5a9fe0;
+  --hi:      #f0f2f8;
+  --mid:     #a0aabb;
+  --lo:      #5a6080;
+  --high:    #ef5353;
+  --med:     #e0a040;
 }
 body {
   font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
@@ -1143,11 +1143,9 @@ a:hover { color: var(--gold); }
 
 _WORLDMAP_CSS = """
 /* ── World Map ── */
-.wm-section { background: #080d17; border-color: rgba(30,70,150,0.3); }
-.wm-section .section-title { color: #94a3b8; border-bottom-color: rgba(30,70,150,0.3); }
-.wm-section .section-sub   { color: #4a6080; }
-.wm-layout { display: flex; gap: 12px; align-items: stretch; }
-.wm-map-col { flex: 0 0 65%; min-width: 0; }
+.wm-section { background: #090e1a; border-color: rgba(30,70,150,0.3); }
+.wm-section .section-title { color: #a0aabb; border-bottom-color: rgba(30,70,150,0.3); }
+.wm-section .section-sub   { color: #5a6080; }
 .worldmap-container {
   position: relative;
   overflow: hidden;
@@ -1184,106 +1182,86 @@ _WORLDMAP_CSS = """
   position: absolute;
   top: 10px; right: 12px;
   display: flex; flex-direction: column; gap: 4px; z-index: 5;
-  background: rgba(5,12,24,0.75);
-  padding: 6px 9px;
+  background: rgba(5,12,24,0.80);
+  padding: 6px 10px;
   border-radius: 4px;
-  border: 1px solid rgba(30,80,160,0.2);
+  border: 1px solid rgba(30,80,160,0.25);
 }
-.wm-lo-row { display: flex; gap: 8px; }
+.wm-lo-row { display: flex; gap: 10px; }
 .wm-lo-item {
   font-size: 10px; font-family: monospace; font-weight: 700;
-  letter-spacing: 0.5px; opacity: 0.75;
+  letter-spacing: 0.5px; opacity: 0.85;
 }
 .wm-lo-size {
-  font-size: 9px; font-family: monospace; opacity: 0.5;
-  color: #64748b; letter-spacing: 0.3px;
+  font-size: 9px; font-family: monospace; opacity: 0.55;
+  color: #7080a0; letter-spacing: 0.3px;
 }
 .wm-lo-high { color: #f87171; }
 .wm-lo-med  { color: #fbbf24; }
 .wm-lo-low  { color: #22d3ee; }
-/* ── HIGH 기사 사이드 피드 ── */
-.wm-feed-col {
-  flex: 1 1 0;
-  min-width: 0;
-  background: #080d17;
-  border: 1px solid rgba(30,80,160,0.25);
-  border-radius: 4px;
+/* ── HIGH 기사 하단 알림 스트립 ── */
+.wm-alert-strip {
   display: flex;
-  flex-direction: column;
+  align-items: stretch;
+  margin-top: 10px;
+  border: 1px solid rgba(239,83,83,0.18);
+  border-radius: 4px;
   overflow: hidden;
+  background: rgba(8,12,22,0.7);
 }
-.wm-feed-header {
-  padding: 9px 14px;
+.wm-alert-label {
+  flex-shrink: 0;
+  padding: 0 14px;
   font-size: 10px;
   font-weight: 700;
   color: #f87171;
   letter-spacing: 1.2px;
-  border-bottom: 1px solid rgba(30,80,160,0.2);
+  border-right: 1px solid rgba(239,83,83,0.18);
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  flex-shrink: 0;
+  background: rgba(239,83,83,0.06);
+  white-space: nowrap;
 }
-.wm-feed-filter-label {
-  font-size: 9px; color: #4a6080; font-weight: 400; letter-spacing: 0;
-}
-.wm-feed-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(30,80,160,0.3) transparent;
-}
-.wm-feed-item {
-  padding: 9px 14px;
-  border-bottom: 1px solid rgba(30,80,160,0.1);
-  cursor: default;
-}
-.wm-feed-item:hover { background: rgba(30,80,160,0.08); }
-.wm-feed-item.hidden { display: none; }
-.wm-feed-meta {
-  font-size: 9px;
-  color: #4a6080;
-  margin-bottom: 3px;
-  font-family: monospace;
+.wm-alert-items {
   display: flex;
-  gap: 6px;
+  overflow-x: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(200,169,110,0.25) transparent;
 }
-.wm-feed-title {
+.wm-alert-card {
+  flex: 0 0 210px;
+  padding: 9px 14px;
+  border-right: 1px solid rgba(30,40,64,0.9);
+  text-decoration: none;
+  display: block;
+  transition: background 0.15s;
+}
+.wm-alert-card:hover { background: rgba(74,143,212,0.08); }
+.wm-alert-meta {
+  font-size: 9px;
+  color: #606880;
+  font-family: monospace;
+  margin-bottom: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wm-alert-title {
   font-size: 11px;
-  color: #94a3b8;
-  line-height: 1.45;
+  color: #c0c8dc;
+  line-height: 1.4;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.wm-feed-more {
-  padding: 9px 14px;
-  text-align: center;
-  border-top: 1px solid rgba(30,80,160,0.2);
-  flex-shrink: 0;
-}
-.wm-feed-more a {
-  font-size: 10px;
-  color: #4a8fd4;
-  text-decoration: none;
-  letter-spacing: 0.5px;
-}
-.wm-feed-more a:hover { color: #94a3b8; }
-@media (max-width: 900px) {
-  .wm-layout { flex-direction: column; }
-  .wm-map-col { flex: none; }
-  .wm-feed-col { min-height: 220px; }
-}
 """
 
 
 def _render_worldmap_section(high_articles: list | None = None) -> str:
-    import html as html_lib
-
-    feed_items = []
-    high_only = [a for a in (high_articles or []) if a.get("importance") == "high"][:14]
+    alert_cards = []
+    high_only = [a for a in (high_articles or []) if a.get("importance") == "high"][:12]
     for a in high_only:
         cc = a.get("country", "")
         flag = COUNTRY_FLAGS.get(cc, "🌐")
@@ -1291,31 +1269,23 @@ def _render_worldmap_section(high_articles: list | None = None) -> str:
         brand = _esc(a.get("brand", ""))
         title = _esc(a.get("title_ko") or a.get("title") or (a.get("details") or "")[:80])
         url = _esc(a.get("source_url") or "#")
-        feed_items.append(
-            f'<div class="wm-feed-item" data-country="{html_lib.escape(cc)}">'
-            f'<div class="wm-feed-meta">'
-            f'<span>{flag} {html_lib.escape(cc)}</span>'
-            f'<span>{html_lib.escape(brand)}</span>'
-            f'<span>{html_lib.escape(date)}</span>'
-            f'</div>'
-            f'<div class="wm-feed-title">'
-            f'<a href="{url}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;">'
-            f'{title}'
+        alert_cards.append(
+            f'<a href="{url}" class="wm-alert-card" target="_blank" rel="noopener">'
+            f'<div class="wm-alert-meta">{flag} {_esc(cc)} · {brand} · {_esc(date)}</div>'
+            f'<div class="wm-alert-title">{title}</div>'
             f'</a>'
-            f'</div>'
-            f'</div>'
         )
 
-    feed_html = "".join(feed_items) if feed_items else '<div style="padding:20px 14px;color:#4a6080;font-size:11px;">최근 HIGH 기사 없음</div>'
+    strip_inner = "".join(alert_cards) if alert_cards else (
+        '<div style="padding:10px 16px;color:#505870;font-size:11px;">최근 HIGH 기사 없음</div>'
+    )
 
     return (
         '<div class="section wm-section" id="worldmap-section">'
         '<div class="section-title">'
         '🌍 글로벌 신호 지도'
-        '<span class="section-sub">마커 클릭 → 해당국 HIGH 기사 필터</span>'
+        '<span class="section-sub">마커 클릭 → 해당국 기사 상세</span>'
         '</div>'
-        '<div class="wm-layout">'
-        '<div class="wm-map-col">'
         '<div class="worldmap-container">'
         '<canvas id="worldmap-canvas"></canvas>'
         '<div id="worldmap-tooltip" class="wm-tooltip"></div>'
@@ -1329,17 +1299,9 @@ def _render_worldmap_section(high_articles: list | None = None) -> str:
         '<div class="wm-lo-size">○ glow 크기 = 전체 기사 수</div>'
         '</div>'
         '</div>'
-        '</div>'
-        '<div class="wm-feed-col">'
-        '<div class="wm-feed-header">'
-        '<span>⚡ HIGH 긴급 기사</span>'
-        '<span class="wm-feed-filter-label" id="wm-feed-filter-label">전체</span>'
-        '</div>'
-        f'<div class="wm-feed-list" id="wm-feed-list">{feed_html}</div>'
-        '<div class="wm-feed-more">'
-        '<a href="#articles-content" onclick="document.getElementById(\'articles-content\').scrollIntoView({behavior:\'smooth\'});return false;">전체 기사 목록 ↓</a>'
-        '</div>'
-        '</div>'
+        '<div class="wm-alert-strip">'
+        '<div class="wm-alert-label">⚡ HIGH</div>'
+        f'<div class="wm-alert-items">{strip_inner}</div>'
         '</div>'
         '</div>'
     )
@@ -1610,21 +1572,7 @@ def _build_worldmap_script(country_stats: dict) -> str:
   canvas.addEventListener('click', function(e) {{
     var r = canvas.getBoundingClientRect();
     var hit = hitTest(e.clientX-r.left, e.clientY-r.top);
-    if (hit) {{
-      openHeatmapDrilldown('all', hit);
-      // HIGH 기사 사이드 피드 필터
-      var feedItems = document.querySelectorAll('#wm-feed-list .wm-feed-item');
-      var label = document.getElementById('wm-feed-filter-label');
-      feedItems.forEach(function(el) {{
-        el.classList.toggle('hidden', el.dataset.country !== hit);
-      }});
-      if (label) label.textContent = (CNAMES[hit] || hit) + ' ✕';
-      if (label) label.style.cursor = 'pointer';
-      if (label) label.onclick = function() {{
-        feedItems.forEach(function(el) {{ el.classList.remove('hidden'); }});
-        label.textContent = '전체'; label.style.cursor = 'default';
-      }};
-    }}
+    if (hit) openHeatmapDrilldown('all', hit);
   }});
 }})();"""
 

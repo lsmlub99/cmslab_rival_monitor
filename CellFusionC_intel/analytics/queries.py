@@ -70,7 +70,7 @@ def get_high_articles(
             SELECT id, title, brand, country, activity_type,
                    details, product_name, source_url, source_name,
                    published_date, note, classification_confidence,
-                   title_ko, article_body, article_body_ko, importance,
+                   title_ko, article_body_ko, importance,
                    brand_focus, source_country
             FROM {DB_SCHEMA}.news_articles
             WHERE importance IN ('high', 'medium')
@@ -84,7 +84,7 @@ def get_high_articles(
             ORDER BY
                 CASE importance WHEN 'high' THEN 0 ELSE 1 END,
                 published_date DESC
-            LIMIT 600
+            LIMIT 400
         """),
         params,
     ).fetchall()
@@ -104,11 +104,10 @@ def get_high_articles(
             "note":             r[10],
             "confidence":       float(r[11]) if r[11] is not None else None,
             "title_ko":         r[12],
-            "article_body":     r[13],
-            "article_body_ko":  r[14],
-            "importance":       r[15] or "high",
-            "brand_focus":      r[16],
-            "source_country":   r[17],
+            "article_body_ko":  r[13],
+            "importance":       r[14] or "high",
+            "brand_focus":      r[15],
+            "source_country":   r[16],
         }
         for r in rows
     ]

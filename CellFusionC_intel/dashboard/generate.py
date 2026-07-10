@@ -2208,7 +2208,7 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
         max_period = max(preset_periods)
 
         # 기사 최대 기간(90일) 1회만 로드 — 작은 기간은 날짜 필터링으로 재사용
-        # article_body TEXT(2000자) 포함 다중 쿼리는 512MB OOM 원인
+        # article_body(2000자 영문 원문)는 SELECT에서 제외 — OOM 방지 (LIMIT 400)
         _all_articles = get_high_articles(session, days=max_period)
         high_articles = [
             a for a in _all_articles

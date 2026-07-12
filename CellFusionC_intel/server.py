@@ -76,17 +76,12 @@ def _prebuild():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    from scheduler.runner import create_scheduler
-    scheduler = create_scheduler()
-    scheduler.start()
-    logger.info("스케줄러 시작됨 (잡 %d개)", len(scheduler.get_jobs()))
-
+    # 수집 스케줄러는 로컬 PC에서만 실행 (cli.py run).
+    # Render는 대시보드 조회 전용(Supabase 읽기) — 여기서 스케줄러를 돌리면
+    # 로컬과 이중 수집되어 OpenAI 토큰이 두 배로 소모됨.
     t = threading.Thread(target=_prebuild, daemon=True)
     t.start()
     yield
-
-    scheduler.shutdown(wait=False)
-    logger.info("스케줄러 종료됨")
 
 
 app = FastAPI(title="K-뷰티 경쟁사 인텔리전스", docs_url="/docs", lifespan=lifespan)

@@ -85,27 +85,74 @@ def job_weekly_full() -> None:
     logger.info("=== [주간] 전체 수집 완료 ===")
 
 
+TIER_CHANGE_COOLDOWN_DAYS = 14   # 최근 변경 후 이 기간 내 재변경 금지 (플립플롭 방지)
+
+
 def job_weekly_momentum() -> None:
-    """브랜드 모멘텀 스코어 계산 및 DB 업데이트. 승급/강등 후보 로깅."""
+    """브랜드 모멘텀 계산 → momentum_score 갱신 + tier 자동 승급/강등."""
     logger.info("=== [주간] 모멘텀 계산 시작 ===")
-    from analytics.queries import compute_brand_momentum, upsert_brand_momentum
+    from analytics.queries import (
+        compute_brand_momentum, upsert_brand_momentum,
+        update_brand_tier, days_since_tier_change,
+    )
     session = get_session()
+    promoted, demoted = [], []
     try:
         scores = compute_brand_momentum(session)
         for s in scores:
             upsert_brand_momentum(session, s["brand"], s["momentum"])
-            if s["signal"] == "rising" and s["tier"] == 2 and s["recent_4w"] >= 5:
-                logger.info("⬆  승급 후보: %-20s  momentum=%.2fx  (최근4주=%d건)",
+
+            # 자동 티어링: 승급 T2→1(rising & 최근4주≥5), 강등 T1→2(cooling & 최근4주≤2)
+            want_promote = s["signal"] == "rising"  and s["tier"] == 2 and s["recent_4w"] >= 5
+            want_demote  = s["signal"] == "cooling" and s["tier"] == 1 and s["recent_4w"] <= 2
+            if not (want_promote or want_demote):
+                continue
+
+            # 히스테리시스: 최근 변경 후 쿨다운 기간 내면 스킵
+            since = days_since_tier_change(session, s["brand"])
+            if since is not None and since < TIER_CHANGE_COOLDOWN_DAYS:
+                logger.info("… 티어 변경 보류(쿨다운 %.0f일): %s", since, s["brand"])
+                continue
+
+            new_tier = 1 if want_promote else 2
+            update_brand_tier(session, s["brand"], new_tier)
+            if want_promote:
+                promoted.append(s["brand"])
+                logger.info("⬆  승급 T2→1: %-20s  momentum=%.2fx  (최근4주=%d건)",
                             s["brand"], s["momentum"], s["recent_4w"])
-            elif s["signal"] == "cooling" and s["tier"] == 1 and s["recent_4w"] <= 2:
-                logger.info("⬇  강등 후보: %-20s  momentum=%.2fx  (최근4주=%d건)",
+            else:
+                demoted.append(s["brand"])
+                logger.info("⬇  강등 T1→2: %-20s  momentum=%.2fx  (최근4주=%d건)",
                             s["brand"], s["momentum"], s["recent_4w"])
-        logger.info("모멘텀 갱신 완료 (%d개 브랜드)", len(scores))
+
+        logger.info("모멘텀 갱신 완료 (%d개 브랜드, 승급 %d / 강등 %d)",
+                    len(scores), len(promoted), len(demoted))
+        if promoted or demoted:
+            _notify_tier_changes(promoted, demoted)
     except Exception as e:
         logger.error("모멘텀 계산 오류: %s", e)
     finally:
         session.close()
     logger.info("=== [주간] 모멘텀 계산 완료 ===")
+
+
+def _notify_tier_changes(promoted: list[str], demoted: list[str]) -> None:
+    """티어 변경 시 Slack 알림 (webhook 없으면 스킵)."""
+    url = os.getenv("SLACK_WEBHOOK_URL", "")
+    if not url:
+        return
+    lines = []
+    if promoted:
+        lines.append("⬆ *승급 (Tier2→1)*: " + ", ".join(promoted))
+    if demoted:
+        lines.append("⬇ *강등 (Tier1→2)*: " + ", ".join(demoted))
+    try:
+        import json
+        data = json.dumps({"text": "*브랜드 티어 자동 조정*\n" + "\n".join(lines)}).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        urllib.request.urlopen(req, timeout=10)
+    except Exception as e:
+        logger.warning("티어 변경 Slack 알림 실패: %s", e)
 
 
 def job_keepalive() -> None:

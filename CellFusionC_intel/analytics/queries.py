@@ -726,6 +726,27 @@ def upsert_brand_momentum(session: Session, brand: str, momentum: float) -> None
     session.commit()
 
 
+def days_since_tier_change(session: Session, brand: str) -> "float | None":
+    """마지막 tier 변경 후 경과일. 기록 없으면 None(제약 없음)."""
+    row = session.execute(text(f"""
+        SELECT EXTRACT(EPOCH FROM (NOW() - tier_changed_at)) / 86400.0
+        FROM {DB_SCHEMA}.monitored_brands
+        WHERE name = :brand AND tier_changed_at IS NOT NULL
+    """), {"brand": brand}).fetchone()
+    return float(row[0]) if row and row[0] is not None else None
+
+
+def update_brand_tier(session: Session, brand: str, new_tier: int) -> None:
+    """monitored_brands 테이블의 tier 승급/강등 + tier_changed_at 기록."""
+    session.execute(text(f"""
+        UPDATE {DB_SCHEMA}.monitored_brands
+        SET tier = :tier,
+            tier_changed_at = NOW()
+        WHERE name = :brand
+    """), {"brand": brand, "tier": new_tier})
+    session.commit()
+
+
 def get_brand_radar(session: Session) -> list[dict]:
     """대시보드 Brand Radar용: momentum + tier 정보 반환."""
     scores = compute_brand_momentum(session)

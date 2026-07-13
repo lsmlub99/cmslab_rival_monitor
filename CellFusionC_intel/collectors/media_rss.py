@@ -20,6 +20,9 @@ from config.settings import RSS_REQUEST_DELAY
 
 logger = logging.getLogger(__name__)
 
+# 일부 매체는 기본 feedparser UA를 차단 → 브라우저 UA로 위장
+_FEED_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36"
+
 MEDIA_FEEDS = [
     # ── 기존: 미국 뷰티 업계지 ──────────────────────────────────────────
     {
@@ -45,6 +48,24 @@ MEDIA_FEEDS = [
         "key": "global_cosmetics_news",
         "name": "Global Cosmetics News",
         "url": "https://www.globalcosmeticsnews.com/feed/",
+        "language": "en",
+    },
+    {
+        "key": "cosmetics_business",
+        "name": "Cosmetics Business",
+        "url": "https://www.cosmeticsbusiness.com/rss",
+        "language": "en",
+    },
+    {
+        "key": "premium_beauty_news",
+        "name": "Premium Beauty News",
+        "url": "https://www.premiumbeautynews.com/spip.php?page=backend",
+        "language": "en",
+    },
+    {
+        "key": "allure",
+        "name": "Allure",
+        "url": "https://www.allure.com/feed/rss",
         "language": "en",
     },
     {
@@ -123,7 +144,7 @@ class MediaRSSCollector(BaseCollector):
 
         for feed_cfg in MEDIA_FEEDS:
             try:
-                feed = feedparser.parse(feed_cfg["url"])
+                feed = feedparser.parse(feed_cfg["url"], agent=_FEED_UA)
                 matched = 0
                 for entry in feed.entries:
                     title = getattr(entry, "title", "").strip()

@@ -10,6 +10,10 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 NAVER_CLIENT_ID = os.getenv("NAVER_CLIENT_ID", "")
 NAVER_CLIENT_SECRET = os.getenv("NAVER_CLIENT_SECRET", "")
 
+# YouTube Data API v3 (https://console.cloud.google.com — 무료 1만 유닛/일)
+# 미설정 시 YouTube 수집기는 자동 스킵
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY", "")
+
 DB_SCHEMA = "rival_intel"
 
 # DB 연결 — 비밀번호 특수문자 문제를 피하기 위해 SQLAlchemy URL.create() 사용

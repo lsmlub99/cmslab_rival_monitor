@@ -14,6 +14,9 @@ logger = logging.getLogger(__name__)
 
 GOOGLE_NEWS_RSS = "https://news.google.com/rss/search?q={query}&hl={hl}&gl={gl}&ceid={ceid}"
 
+# 브랜드당 2쿼리: 일반 + 전략 활동 지향(유통·진출·투자·협업 신호 커버리지 보강)
+_ACTIVITY_TERMS = "launch OR Sephora OR Ulta OR expansion OR funding OR partnership OR flagship OR collaboration"
+
 
 def _parse_date(entry) -> datetime:
     for field in ("published", "updated"):
@@ -35,46 +38,50 @@ class GoogleRSSCollector(BaseCollector):
             logger.warning("미지원 국가 코드: %s", country)
             return []
 
-        query = quote_plus(f'"{brand}" beauty')
-        url = GOOGLE_NEWS_RSS.format(
-            query=query,
-            hl=country_cfg["hl"],
-            gl=country_cfg["gl"],
-            ceid=country_cfg["ceid"],
-        )
+        queries = [
+            f'"{brand}" beauty',
+            f'"{brand}" ({_ACTIVITY_TERMS})',
+        ]
 
-        logger.debug("RSS 수집: %s / %s → %s", brand, country, url)
-
-        try:
-            feed = feedparser.parse(url)
-        except Exception as e:
-            logger.error("RSS 파싱 오류 (%s/%s): %s", brand, country, e)
-            return []
-
-        articles = []
-        for entry in feed.entries:
-            title = getattr(entry, "title", "").strip()
-            link = getattr(entry, "link", "").strip()
-            summary = getattr(entry, "summary", "").strip()
-            source = getattr(entry, "source", {})
-            source_name = source.get("title", "") if isinstance(source, dict) else ""
-
-            if not title or not link:
+        seen_links: set[str] = set()
+        articles: list[RawArticle] = []
+        for q in queries:
+            url = GOOGLE_NEWS_RSS.format(
+                query=quote_plus(q),
+                hl=country_cfg["hl"],
+                gl=country_cfg["gl"],
+                ceid=country_cfg["ceid"],
+            )
+            try:
+                feed = feedparser.parse(url)
+            except Exception as e:
+                logger.error("RSS 파싱 오류 (%s/%s): %s", brand, country, e)
                 continue
 
-            articles.append(
-                RawArticle(
-                    title=title,
-                    url=link,
-                    published=_parse_date(entry),
-                    summary=summary,
-                    source_name=source_name,
-                    language=country_cfg["hl"],
-                    brand_hint=brand,
-                    country_hint=country.upper(),
-                )
-            )
+            for entry in feed.entries:
+                title = getattr(entry, "title", "").strip()
+                link = getattr(entry, "link", "").strip()
+                summary = getattr(entry, "summary", "").strip()
+                source = getattr(entry, "source", {})
+                source_name = source.get("title", "") if isinstance(source, dict) else ""
 
-        time.sleep(RSS_REQUEST_DELAY)
-        logger.info("수집 완료: %s/%s → %d건", brand, country, len(articles))
+                if not title or not link or link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                articles.append(
+                    RawArticle(
+                        title=title,
+                        url=link,
+                        published=_parse_date(entry),
+                        summary=summary,
+                        source_name=source_name,
+                        language=country_cfg["hl"],
+                        brand_hint=brand,
+                        country_hint=country.upper(),
+                    )
+                )
+            time.sleep(RSS_REQUEST_DELAY)
+
+        logger.info("수집 완료: %s/%s → %d건 (쿼리 %d개)", brand, country, len(articles), len(queries))
         return articles

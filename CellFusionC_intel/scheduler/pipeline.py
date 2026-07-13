@@ -19,6 +19,7 @@ from collectors.jangup import JangupCollector
 from collectors.prtimes import PRTimesCollector
 from collectors.naver_news import NaverNewsCollector
 from collectors.reddit_collector import RedditCollector
+from collectors.youtube import YouTubeCollector
 from collectors.body_fetcher import fetch_body
 from classifier.claude_classifier import classify_articles
 from deduplication.url_hasher import url_hash, deduplicate_batch
@@ -36,6 +37,7 @@ _jangup = JangupCollector()
 _prtimes = PRTimesCollector()
 _naver = NaverNewsCollector()
 _reddit = RedditCollector()
+_youtube = YouTubeCollector()
 
 
 @dataclass
@@ -147,7 +149,8 @@ def run_pipeline(brand: str, country: str) -> PipelineStats:
         collectors.append(_prtimes)
     if country.upper() == "KR":
         collectors.append(_naver)
-    collectors.append(_reddit)  # 글로벌 커뮤니티 — 모든 국가
+    collectors.append(_reddit)   # 글로벌 커뮤니티 — 모든 국가
+    collectors.append(_youtube)  # 영상 신호 — US 파이프라인에서만 1회(내부 게이트)
 
     try:
         for collector in collectors:

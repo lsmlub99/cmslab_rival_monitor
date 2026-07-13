@@ -5,12 +5,13 @@ APScheduler 스케줄
 - 전체 브랜드 × 전체 국가: 매주 월요일 20:00 KST (주간 풀스캔)
 - 주간 모멘텀 계산: 매주 월요일 19:00 KST
 - 주간 중복 정리: 매주 일요일 19:00 KST
-- Render keep-alive 핑: 14분마다 (무료 플랜 슬립 방지)
+- Render keep-alive 핑: 10분마다 (무료 플랜 15분 슬립 방지, 시작 즉시 1회)
 """
 
 import logging
 import os
 import urllib.request
+from datetime import datetime
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -193,13 +194,17 @@ def create_scheduler() -> BackgroundScheduler:
         max_instances=1,
     )
 
-    # 14분마다 — Render 무료 플랜 슬립 방지 (15분 비활성 → 슬립)
+    # 10분마다 — Render 무료 플랜 슬립 방지 (15분 비활성 → 슬립).
+    # next_run_time=now: 스케줄러 시작(또는 재시작) 즉시 1회 핑 → 재시작 시
+    # 인터벌 리셋으로 생기는 공백(→ 슬립) 방지.
     scheduler.add_job(
         job_keepalive,
-        trigger=IntervalTrigger(minutes=14),
+        trigger=IntervalTrigger(minutes=10),
         id="keepalive",
         name="[상시] Render keep-alive 핑",
         max_instances=1,
+        coalesce=True,
+        next_run_time=datetime.now(),
     )
 
     return scheduler

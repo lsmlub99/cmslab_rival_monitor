@@ -64,39 +64,49 @@ _COUNTRY_KO = {
 
 
 def generate_brand_country_summary(brand: str, country: str, articles: list) -> str:
-    """특정 브랜드가 특정 국가에서 벌이는 활동 → 2문장 요약 (무엇을·왜).
+    """특정 브랜드가 특정 국가에서 벌이는 활동 → 구조화된 전략 리딩.
+
+    3개 섹션(### 핵심 행보 / ### 근거 / ### 전략적 의도)으로 반환.
+    프론트가 '### 라벨' 기준으로 분할해 소제목 블록으로 렌더링.
 
     articles: [{imp, act, title_ko, details, date}, ...] (해당 브랜드×국가만)
     """
     country_ko = _COUNTRY_KO.get(country, country)
     if not articles:
-        return f"{brand}의 {country_ko} 관련 주목할 만한 활동이 없습니다."
+        return f"### 핵심 행보\n{brand}의 {country_ko} 관련 주목할 만한 활동이 아직 없습니다."
 
     article_lines = "\n".join(
-        f"- [{a['imp'].upper()}] {a.get('title_ko','')} / {a.get('details','')[:120]} ({a.get('act','')}, {a.get('date','')})"
+        f"- [{a['imp'].upper()}] {a.get('title_ko','')} / {a.get('details','')[:160]} ({a.get('act','')}, {a.get('date','')})"
         for a in articles
         if a.get("title_ko") or a.get("details")
     )
     if not article_lines:
         return _fallback_from_data(brand, articles)
 
-    prompt = f"""다음은 K-뷰티 브랜드 {brand}의 **{country_ko}** 시장 관련 최근 기사입니다:
+    prompt = f"""당신은 K-뷰티 경쟁사 인텔리전스 분석가입니다.
+다음은 브랜드 **{brand}**의 **{country_ko}** 시장 관련 최근 기사입니다:
 
 {article_lines}
 
-위 기사를 바탕으로 {brand}가 **{country_ko}에서** 지금 무엇을 하고 있는지 **2문장**으로 요약하세요.
-- 반드시 기사에 나온 **구체적 사실**(파트너십, 유통 채널명, 진출 방식, 캠페인, 수치 등)을 포함할 것
-- "글로벌 시장을 공략 중입니다" 같은 뻔한 표현 금지
-- 첫 문장: {country_ko}에서의 가장 중요한 최근 움직임 (무엇을, 어떻게)
-- 둘째 문장: 그것이 왜 중요한가 (전략적 의미 또는 시사점)"""
+위 기사들을 종합해 {brand}가 **{country_ko}에서** 무엇을 어떻게 하고 있으며 그 속셈(전략적 의도)이 무엇인지 분석하세요.
+아래 3개 섹션 형식을 **정확히** 지켜서 작성하세요 (각 섹션 머리말은 반드시 `### `로 시작):
+
+### 핵심 행보
+{country_ko} 시장에서의 구체적 움직임을 2~3문장으로. 반드시 기사의 **구체적 사실**(유통 채널명, 파트너·인플루언서 이름, 진출 방식, 제품, 수치·시점)을 명시. 여러 건이면 흐름/순서로 엮을 것.
+
+### 근거
+위 판단의 핵심 근거가 된 기사 1~3건을 "- 제목 요지 (날짜)" 형식으로 나열. 각 줄에 왜 중요한지 한 구절 덧붙일 것.
+
+### 전략적 의도
+{brand}가 {country_ko}에서 노리는 것 — 사업 확장 방식(유통 확대? 브랜드 인지도? 특정 세그먼트 공략?)과 다음 수순 예측을 2~3문장으로. "글로벌 공략 중" 같은 뻔한 말 금지, 이 브랜드·이 시장에 특정된 해석만."""
 
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         response = client.chat.completions.create(
             model="gpt-4o-mini",
-            max_tokens=300,
-            temperature=0.3,
+            max_tokens=600,
+            temperature=0.35,
             messages=[{"role": "user", "content": prompt}],
         )
         content = (response.choices[0].message.content or "").strip()

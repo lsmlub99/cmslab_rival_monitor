@@ -197,6 +197,7 @@ async def api_cell_insight(
     캐시 히트 → 즉시 반환. 미스 → OpenAI 생성 → DB 저장 → 반환.
     사용자 클릭 시에만 호출되며 (brand, country, from_date, to_date)로 영구 캐시.
     """
+    from collections import Counter
     from analytics.queries import (
         get_brand_country_insight_cache,
         upsert_brand_country_insight,
@@ -205,39 +206,47 @@ async def api_cell_insight(
     from analytics.summarizer import generate_brand_country_summary
     from storage.models import get_session
 
+    # 기사는 항상 조회 — 활동유형 분포(1차 직관성 칩)는 캐시 히트에도 최신 제공.
+    # AI 요약만 캐시로 절약.
     session = get_session()
     try:
-        cached = get_brand_country_insight_cache(session, brand, country, from_date, to_date)
-        if cached:
-            return JSONResponse({
-                "summary": html_lib.escape(cached["summary"]),
-                "stats":   {"high": cached["high_count"], "med": cached["med_count"]},
-                "cached":  True,
-            })
-
         articles = get_brand_country_articles(session, brand, country, from_date, to_date)
+        cached = get_brand_country_insight_cache(session, brand, country, from_date, to_date)
     finally:
         session.close()
 
     high = sum(1 for a in articles if a["imp"] == "high")
     med  = len(articles) - high
 
-    summary = generate_brand_country_summary(brand, country, articles)
+    # 주력 활동유형 top 3 (HIGH/MED 기사 기준)
+    act_cnt = Counter(a["act"] for a in articles if a.get("act"))
+    act_total = sum(act_cnt.values()) or 1
+    activities = [
+        {"act": k, "count": v, "pct": round(v / act_total * 100)}
+        for k, v in act_cnt.most_common(3)
+    ]
 
-    if summary:
-        save_session = get_session()
-        try:
-            upsert_brand_country_insight(
-                save_session, brand, country, from_date, to_date,
-                {"summary": summary, "high_count": high, "med_count": med},
-            )
-        finally:
-            save_session.close()
+    if cached:
+        summary = cached["summary"]
+        is_cached = True
+    else:
+        summary = generate_brand_country_summary(brand, country, articles)
+        is_cached = False
+        if summary:
+            save_session = get_session()
+            try:
+                upsert_brand_country_insight(
+                    save_session, brand, country, from_date, to_date,
+                    {"summary": summary, "high_count": high, "med_count": med},
+                )
+            finally:
+                save_session.close()
 
     return JSONResponse({
-        "summary": html_lib.escape(summary),
-        "stats":   {"high": high, "med": med},
-        "cached":  False,
+        "summary":    html_lib.escape(summary),
+        "activities": activities,
+        "stats":      {"high": high, "med": med},
+        "cached":     is_cached,
     })
 
 

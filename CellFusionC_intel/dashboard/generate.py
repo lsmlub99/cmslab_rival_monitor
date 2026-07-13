@@ -1084,6 +1084,27 @@ a:hover { color: var(--gold); }
   border-radius: 50%; animation: ddspin 0.8s linear infinite;
 }
 @keyframes ddspin { to { transform: rotate(360deg); } }
+/* 주력 활동 칩 (1차 직관성) */
+.dd-act-row { margin-bottom: 12px; }
+.dd-act-row-h {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--lo); margin-bottom: 6px;
+}
+.dd-act-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.dd-act-focus {
+  font-size: 12px; font-weight: 600; padding: 3px 9px;
+  border: 1px solid; border-radius: 12px; white-space: nowrap;
+  background: rgba(255,255,255,0.03);
+}
+.dd-act-focus b { font-weight: 800; }
+/* 구조화 요약 섹션 */
+.dd-sum-sec { margin-bottom: 12px; }
+.dd-sum-sec:last-child { margin-bottom: 0; }
+.dd-sum-sec-h {
+  font-size: 12px; font-weight: 800; color: var(--gold);
+  margin-bottom: 4px; letter-spacing: 0.02em;
+}
+.dd-sum-sec-b { font-size: 13.5px; line-height: 1.68; color: var(--hi); }
 
 /* ── Brand Radar ── */
 .radar-list { display: flex; flex-direction: column; gap: 7px; }
@@ -2110,6 +2131,41 @@ function _currentRange() {{
   return {{from: _isoDate(from), to: _isoDate(today)}};
 }}
 
+var _ACT_META = {{
+  '유통_채널':{{l:'유통 채널',c:'#4a8fd4'}},
+  '신시장_진출':{{l:'신시장 진출',c:'#9b7fe8'}},
+  '신제품_런칭':{{l:'신제품 런칭',c:'#4ab884'}},
+  '인플루언서_협업':{{l:'인플루언서',c:'#c8a96e'}},
+  '투자_BD':{{l:'투자·BD',c:'#e05353'}},
+  '브랜드_마케팅':{{l:'브랜드 마케팅',c:'#e0894a'}},
+  '실적_공시':{{l:'실적·공시',c:'#46b0b0'}},
+  '기타':{{l:'기타',c:'#6f7aa0'}}
+}};
+
+function _renderActChips(acts) {{
+  if (!acts || !acts.length) return '';
+  var chips = acts.map(function(a) {{
+    var m = _ACT_META[a.act] || {{l:a.act, c:'#6f7aa0'}};
+    return '<span class="dd-act-focus" style="border-color:' + m.c + '55;color:' + m.c + '">'
+      + m.l + ' <b>' + a.pct + '%</b></span>';
+  }}).join('');
+  return '<div class="dd-act-row"><div class="dd-act-row-h">주력 활동</div><div class="dd-act-chips">' + chips + '</div></div>';
+}}
+
+function _renderSummarySections(raw) {{
+  // 서버가 html-escape한 '### 라벨\\n본문' 텍스트를 소제목 블록으로 분할
+  var parts = raw.split(/###\\s+/).filter(function(s) {{ return s.trim(); }});
+  if (parts.length === 0) return '<div class="dd-sum-body">' + raw + '</div>';
+  return parts.map(function(chunk) {{
+    var nl = chunk.indexOf('\\n');
+    var label = nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim();
+    var body  = nl === -1 ? '' : chunk.slice(nl + 1).trim();
+    body = body.replace(/\\n/g, '<br>');
+    return '<div class="dd-sum-sec"><div class="dd-sum-sec-h">' + label + '</div>'
+      + '<div class="dd-sum-sec-b">' + body + '</div></div>';
+  }}).join('');
+}}
+
 var _ddToken = 0;
 function _renderCellSummary(brand, country) {{
   var sumEl = document.getElementById('dd-summary');
@@ -2117,8 +2173,8 @@ function _renderCellSummary(brand, country) {{
   if (brand === 'all') {{ sumEl.style.display = 'none'; sumEl.innerHTML = ''; return; }}
   var myToken = ++_ddToken;
   sumEl.style.display = '';
-  sumEl.innerHTML = '<div class="dd-sum-label">전략 요약</div>'
-    + '<div class="dd-sum-body"><span class="dd-sum-spin"></span>요약 생성 중…</div>';
+  sumEl.innerHTML = '<div class="dd-sum-label">전략 인사이트</div>'
+    + '<div class="dd-sum-body"><span class="dd-sum-spin"></span>분석 생성 중… (최초 1회 수 초 소요)</div>';
   var rng = _currentRange();
   fetch('/api/cell-insight?brand=' + encodeURIComponent(brand)
         + '&country=' + encodeURIComponent(country)
@@ -2127,9 +2183,10 @@ function _renderCellSummary(brand, country) {{
     .then(function(r) {{ return r.json(); }})
     .then(function(data) {{
       if (myToken !== _ddToken) return;  // 다른 셀로 이동함 — 무시
-      if (data && data.summary) {{
-        sumEl.innerHTML = '<div class="dd-sum-label">전략 요약</div>'
-          + '<div class="dd-sum-body">' + data.summary + '</div>';
+      if (data && (data.summary || (data.activities && data.activities.length))) {{
+        sumEl.innerHTML = '<div class="dd-sum-label">전략 인사이트</div>'
+          + _renderActChips(data.activities)
+          + _renderSummarySections(data.summary || '');
       }} else {{
         sumEl.style.display = 'none';
       }}

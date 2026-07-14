@@ -114,9 +114,13 @@ def get_high_articles(
 
 
 def get_brand_country_matrix(
-    session: Session, days: int = 30, top_n: int = 12
+    session: Session, days: int = 30, top_n: int = 12, top_n_countries: int = 14
 ) -> dict:
-    """brand × country 크로스탭 카운트 매트릭스 반환."""
+    """brand × country 크로스탭 카운트 매트릭스 반환.
+
+    컬럼(국가)은 카운트 상위 top_n_countries개만 노출 → 가로 스크롤 방지.
+    NULL·빈 국가코드는 제외. 행 합계는 전체 시장 기준(노출 컬럼 합과 다를 수 있음).
+    """
     cutoff = _cutoff_iso(days)
 
     rows = session.execute(
@@ -130,17 +134,24 @@ def get_brand_country_matrix(
         {"cutoff": cutoff},
     ).fetchall()
 
+    _JUNK_CC = {"", "NULL", "NONE", "N/A", "??", "XX"}
+
     brand_totals: dict = defaultdict(int)
     country_totals: dict = defaultdict(int)
     raw_matrix: dict = defaultdict(lambda: defaultdict(int))
 
     for brand_val, country_val, cnt in rows:
-        raw_matrix[brand_val][country_val] += cnt
+        cc = (country_val or "").strip().upper()
+        if cc in _JUNK_CC:
+            continue
+        raw_matrix[brand_val][cc] += cnt
         brand_totals[brand_val] += cnt
-        country_totals[country_val] += cnt
+        country_totals[cc] += cnt
 
     top_brands = sorted(brand_totals, key=lambda b: brand_totals[b], reverse=True)[:top_n]
-    top_countries = sorted(country_totals, key=lambda c: country_totals[c], reverse=True)
+    top_countries = sorted(
+        country_totals, key=lambda c: country_totals[c], reverse=True
+    )[:top_n_countries]
 
     return {
         "brands":         top_brands,

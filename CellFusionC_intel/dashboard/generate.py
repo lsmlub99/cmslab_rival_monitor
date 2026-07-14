@@ -925,7 +925,7 @@ a:hover { color: var(--gold); }
 .title-cell { max-width: 480px; word-break: break-word; }
 
 /* ── Heatmap ── */
-.heatmap-wrap { max-height: 400px; overflow: auto; }
+.heatmap-wrap { overflow-x: auto; }
 .heatmap-table th { position: sticky; top: 0; z-index: 2; }
 .heatmap-table .sticky-col {
   position: sticky; left: 0;
@@ -997,7 +997,8 @@ a:hover { color: var(--gold); }
 .filter-count { font-size: 10px; color: var(--lo); margin-left: 4px; white-space: nowrap; }
 
 /* ── Lower 2-col ── */
-.lower-row { display: grid; grid-template-columns: 1fr 300px; gap: 16px; margin-bottom: 16px; }
+.lower-row { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 16px; margin-bottom: 16px; }
+.lower-row > * { min-width: 0; }
 @media (max-width: 900px) { .lower-row { grid-template-columns: 1fr; } }
 
 /* ── Brand HIGH ratio ── */

@@ -1884,15 +1884,9 @@ def _build_full_html(
     <div class="insight-grid" id="insight-grid"></div>
   </div>
 
-  <div class="charts-row">
-    <div class="chart-section">
-      <div class="section-title">주별 수집 트렌드</div>
-      {trend_html}
-    </div>
-    <div class="chart-section">
-      <div class="section-title">활동 유형 분포</div>
-      {activity_html}
-    </div>
+  <div class="chart-section">
+    <div class="section-title">주별 수집 트렌드<span class="section-sub">전체 브랜드 주간 수집량 추이</span></div>
+    {trend_html}
   </div>
 
 </div>

@@ -538,10 +538,10 @@ function _fmtInsightStrategy(raw) {{
     var nl = chunk.indexOf('\\n');
     var label = nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim();
     var body  = nl === -1 ? '' : chunk.slice(nl + 1).trim();
-    body = body.replace(/\\n/g, ' ');
+    body = _mdBold(body).replace(/\\n/g, ' ');
     var watch = label.indexOf('관전') !== -1;
     return '<div class="insight-strat-sec"><div class="insight-strat-h' + (watch ? ' watch' : '') + '">'
-      + label + '</div><div class="insight-strat-body">' + body + '</div></div>';
+      + _mdBold(label) + '</div><div class="insight-strat-body">' + body + '</div></div>';
   }}).join('');
 }}
 
@@ -621,15 +621,18 @@ window._renderMarket = function(raw) {
     var label = nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim();
     var body  = nl === -1 ? '' : chunk.slice(nl + 1).trim();
     var action = label.indexOf('액션') !== -1;
+    var lines = body.split(/\\n/).map(function(l) { return l.trim(); }).filter(Boolean);
+    var bulleted = lines.filter(function(l) { return /^[-•]/.test(l); }).length >= 1;
     var inner;
-    if (action) {
-      var items = body.split(/\\n/).map(function(l) { return l.replace(/^[-•]\\s*/, '').trim(); }).filter(Boolean);
-      inner = '<ul class="market-actions">' + items.map(function(i) { return '<li>' + i + '</li>'; }).join('') + '</ul>';
+    if (bulleted || action) {
+      var items = lines.map(function(l) { return l.replace(/^\\s*[-•\\d.]+\\s*/, '').trim(); }).filter(Boolean);
+      var cls = action ? 'market-actions' : 'market-list';
+      inner = '<ul class="' + cls + '">' + items.map(function(i) { return '<li>' + _mdBold(i) + '</li>'; }).join('') + '</ul>';
     } else {
-      inner = '<div class="market-sec-b">' + body.replace(/\\n/g, '<br>') + '</div>';
+      inner = '<div class="market-sec-b">' + _mdBold(body).replace(/\\n/g, '<br>') + '</div>';
     }
     return '<div class="market-sec' + (action ? ' action' : '') + '">'
-      + '<div class="market-sec-h' + (action ? ' action' : '') + '">' + label + '</div>' + inner + '</div>';
+      + '<div class="market-sec-h' + (action ? ' action' : '') + '">' + _mdBold(label) + '</div>' + inner + '</div>';
   }).join('');
 };"""
 
@@ -1209,6 +1212,14 @@ a:hover { color: var(--gold); }
 }
 .market-actions li::before {
   content: '▸'; position: absolute; left: 2px; color: var(--gold); font-weight: 700;
+}
+.market-list { margin: 0; padding-left: 4px; list-style: none; }
+.market-list li {
+  font-size: 13.5px; line-height: 1.62; color: var(--hi);
+  padding: 4px 0 4px 16px; position: relative;
+}
+.market-list li::before {
+  content: '·'; position: absolute; left: 4px; color: var(--blue); font-weight: 700;
 }
 
 /* ── Insight Cards ── */
@@ -2239,16 +2250,21 @@ function _renderActChips(acts) {{
   return '<div class="dd-act-row"><div class="dd-act-row-h">주력 활동</div><div class="dd-act-chips">' + chips + '</div></div>';
 }}
 
+// 마크다운 인라인 변환: **굵게** → <strong>, 앞머리 '- '·'1.' 불릿 정리
+function _mdBold(s) {{
+  return String(s || '').replace(/\\*\\*([^*]+?)\\*\\*/g, '<strong>$1</strong>');
+}}
+
 function _renderSummarySections(raw) {{
   // 서버가 html-escape한 '### 라벨\\n본문' 텍스트를 소제목 블록으로 분할
   var parts = raw.split(/###\\s+/).filter(function(s) {{ return s.trim(); }});
-  if (parts.length === 0) return '<div class="dd-sum-body">' + raw + '</div>';
+  if (parts.length === 0) return '<div class="dd-sum-body">' + _mdBold(raw) + '</div>';
   return parts.map(function(chunk) {{
     var nl = chunk.indexOf('\\n');
     var label = nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim();
     var body  = nl === -1 ? '' : chunk.slice(nl + 1).trim();
-    body = body.replace(/\\n/g, '<br>');
-    return '<div class="dd-sum-sec"><div class="dd-sum-sec-h">' + label + '</div>'
+    body = _mdBold(body).replace(/\\n/g, '<br>');
+    return '<div class="dd-sum-sec"><div class="dd-sum-sec-h">' + _mdBold(label) + '</div>'
       + '<div class="dd-sum-sec-b">' + body + '</div></div>';
   }}).join('');
 }}

@@ -29,7 +29,7 @@ from analytics.queries import (
     get_weekly_trend,
     upsert_insight_cache,
 )
-from analytics.summarizer import generate_brand_strategy_summary
+from analytics.summarizer import generate_brand_strategy_summary, generate_market_overview
 from storage.models import get_session
 
 logger = logging.getLogger(__name__)
@@ -603,7 +603,35 @@ window._renderInsights = function(data) {{
   }}
   var d = PERIOD_DATA[String(_currentPeriod)];
   if (d && d.insights) window._renderInsights(d.insights);
+  if (d && window._renderMarket) window._renderMarket(d.market || '');
 }})();"""
+
+
+def _build_market_script() -> str:
+    """window._renderMarket(text) — 시장 종합 인사이트 렌더."""
+    return """
+window._renderMarket = function(raw) {
+  var el = document.getElementById('market-body');
+  if (!el) return;
+  if (!raw) { el.innerHTML = '<div class="market-empty">종합할 만한 최근 경쟁 활동이 없습니다.</div>'; return; }
+  var parts = raw.split(/###\\s+/).filter(function(s) { return s.trim(); });
+  if (!parts.length) { el.innerHTML = '<div class="market-sec-b">' + raw + '</div>'; return; }
+  el.innerHTML = parts.map(function(chunk) {
+    var nl = chunk.indexOf('\\n');
+    var label = nl === -1 ? chunk.trim() : chunk.slice(0, nl).trim();
+    var body  = nl === -1 ? '' : chunk.slice(nl + 1).trim();
+    var action = label.indexOf('액션') !== -1;
+    var inner;
+    if (action) {
+      var items = body.split(/\\n/).map(function(l) { return l.replace(/^[-•]\\s*/, '').trim(); }).filter(Boolean);
+      inner = '<ul class="market-actions">' + items.map(function(i) { return '<li>' + i + '</li>'; }).join('') + '</ul>';
+    } else {
+      inner = '<div class="market-sec-b">' + body.replace(/\\n/g, '<br>') + '</div>';
+    }
+    return '<div class="market-sec' + (action ? ' action' : '') + '">'
+      + '<div class="market-sec-h' + (action ? ' action' : '') + '">' + label + '</div>' + inner + '</div>';
+  }).join('');
+};"""
 
 
 # Natural Earth 110m land polygons [lon, lat].
@@ -1153,6 +1181,34 @@ a:hover { color: var(--gold); }
 .radar-demote {
   font-size: 9px; font-weight: 700; padding: 1px 6px; border-radius: 2px; white-space: nowrap;
   background: rgba(224,83,83,0.12); color: #e05353; letter-spacing: 0.04em; flex-shrink: 0;
+}
+
+/* ── 시장 종합 인사이트 ── */
+.market-body { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 800px) { .market-body { grid-template-columns: 1fr; } }
+.market-empty { color: var(--lo); font-size: 13px; padding: 8px; grid-column: 1 / -1; }
+.market-sec {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 14px 16px;
+}
+.market-sec.action {
+  grid-column: 1 / -1;
+  background: linear-gradient(180deg, rgba(212,184,126,0.10), rgba(212,184,126,0.03));
+  border: 1px solid rgba(212,184,126,0.28); border-left: 3px solid var(--gold);
+}
+.market-sec-h {
+  font-size: 12px; font-weight: 800; letter-spacing: 0.06em;
+  color: var(--blue); margin-bottom: 8px;
+}
+.market-sec-h.action { color: var(--gold); font-size: 12.5px; }
+.market-sec-b { font-size: 13.5px; line-height: 1.72; color: var(--hi); }
+.market-actions { margin: 0; padding-left: 4px; list-style: none; }
+.market-actions li {
+  font-size: 13.5px; line-height: 1.6; color: var(--hi);
+  padding: 5px 0 5px 20px; position: relative;
+}
+.market-actions li::before {
+  content: '▸'; position: absolute; left: 2px; color: var(--gold); font-weight: 700;
 }
 
 /* ── Insight Cards ── */
@@ -1757,6 +1813,7 @@ def _build_full_html(
     brand_act_html    = _render_brand_activity_bar(brand_act)
     radar_html        = _render_brand_radar(brand_radar or [])
     insights_script   = _build_insights_script(brand_insights)
+    market_script     = _build_market_script()
     trend_html        = _canvas_or_table_trend(trend, has_chartjs)
     activity_html     = _canvas_or_table_activity(distribution, has_chartjs)
     chart_scripts     = _build_chart_scripts(trend, distribution) if has_chartjs else ""
@@ -1788,6 +1845,7 @@ def _build_full_html(
             },
             "articles":      v["articles"],
             "country_stats": v["country_stats"],
+            "market":        _esc_s(v.get("market", "")),
             "insights": {
                 brand: {
                     "top_act":       _esc_s(ins["top_act"]),
@@ -1898,6 +1956,15 @@ def _build_full_html(
       <span class="section-sub">최근 4주 vs 직전 4주 기사량 비율 · ▲Rising / ▶Stable / ▼Cooling</span>
     </div>
     {radar_html}
+  </div>
+
+  <!-- 시장 종합 인사이트 + 셀퓨전씨 맞춤 조언 -->
+  <div class="section" id="market-section">
+    <div class="section-title">
+      🧭 시장 종합 인사이트 &amp; 셀퓨전씨 전략 제언
+      <span class="section-sub">전 경쟁사 종합 분석 → 우리(씨엠에스랩) 관점 조언</span>
+    </div>
+    <div class="market-body" id="market-body"></div>
   </div>
 
   <!-- Brand Insight Cards (Claude API 자동생성) -->
@@ -2029,8 +2096,9 @@ function setPeriod(days) {{
   // World map
   if (window._wmSetStats) window._wmSetStats(d.country_stats);
 
-  // Insight cards
+  // Insight cards + 시장 종합
   if (d.insights && window._renderInsights) window._renderInsights(d.insights);
+  if (window._renderMarket) window._renderMarket(d.market || '');
 }}
 
 // ── Date picker helpers ──
@@ -2323,6 +2391,7 @@ document.addEventListener('DOMContentLoaded', function() {{
 
 {chart_scripts}
 {stacked_script}
+{market_script}
 {insights_script}
 {worldmap_script}
 </script>
@@ -2428,6 +2497,19 @@ def generate_report(output_path: str = "rival_report.html", days: int = 30) -> s
                     "key_articles":  data.get("articles", [])[:3],
                 }
             period_data[p]["insights"] = p_brand_insights
+
+            # 시장 종합 인사이트 + 셀퓨전씨 맞춤 조언 (__MARKET__ 센티넬로 캐시)
+            m_cached = cached_p.get("__MARKET__", {}).get("summary")
+            if m_cached:
+                market = m_cached
+            else:
+                market = generate_market_overview(p_raw)
+                if market:
+                    _from, _to = period_date_ranges[p]
+                    upsert_insight_cache(insight_session, "__MARKET__", _from, _to, {
+                        "summary": market, "top_act": None, "top_pct": 0, "high_pct": 0.0,
+                    })
+            period_data[p]["market"] = market
     finally:
         insight_session.close()
 

@@ -196,9 +196,17 @@ def _notify_tier_changes(promoted: list[str], demoted: list[str]) -> None:
 
 
 def job_keepalive() -> None:
-    """Render 무료 플랜 슬립 방지 — 자기 자신 /health 핑."""
+    """Render keep-alive 핑 — 업무시간(평일 08~20시 KST)에만.
+
+    ⚠️ 상시(24h) 핑은 Render 무료플랜 월 750시간을 소진 → 서비스 정지됨.
+    스케줄러는 로컬에서 돌므로 Render는 대시보드 조회 전용이라 상시 가동 불필요.
+    업무시간에만 깨워두고 나머지는 슬립 → 월 사용시간 대폭 절감(약 250h/월).
+    """
     url = os.getenv("RENDER_EXTERNAL_URL", "").rstrip("/")
     if not url:
+        return
+    now = datetime.now()  # 로컬(Asia/Seoul) 기준
+    if now.weekday() >= 5 or not (8 <= now.hour < 20):  # 주말 or 업무시간 외 → 슬립 허용
         return
     try:
         urllib.request.urlopen(f"{url}/health", timeout=10)
